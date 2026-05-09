@@ -1,0 +1,16 @@
+# Compiled binary
+/card-reader
+
+# Screenshot — contains personal insurance data, do not commit
+/gkv-card-reader.png
+
+# macOS
+.DS_Store
+.history
+
+# KTDA — regenerated via `card-reader ktda update`
+/ktda-files/
+
+# Card-reader output files — keep the directory, ignore its contents
+/output/*
+!/output/.gitkeep

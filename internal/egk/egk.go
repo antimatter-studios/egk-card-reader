@@ -1,0 +1,103 @@
+package egk
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/ebfe/scard"
+)
+
+// CardData bundles everything we extract from the eGK in one read session.
+type CardData struct {
+	Personal  *PersonalData
+	Insurance *InsuranceData
+	Protected *ProtectedData
+	RawPD     []byte
+	RawVD     []byte
+	XMLPD     string // decompressed PD XML
+	XMLAVD    string // decompressed AVD XML
+	XMLGVD    string // decompressed GVD XML (if present)
+	HCAFCP    []byte // FCP/FCI from SELECT DF.HCA, if returned
+}
+
+// Read selects the HCA application and reads + parses EF.PD and EF.VD.
+//
+// Read strategy: SELECT DF.HCA by AID (with FCP), then READ BINARY by SFI to
+// avoid relying on FID-based SELECT EF (which fails on some implementations).
+// If SFI fails, fall back to SELECT EF by FID.
+func Read(card *scard.Card) (*CardData, error) {
+	// Some cards land in an unexpected DF on power-up; explicitly walk MF first.
+	if err := selectMF(card); err != nil {
+		// Non-fatal — many eGK cards don't support explicit MF select,
+		// they assume MF after reset.
+		if os.Getenv("EGK_TRACE") == "1" {
+			fmt.Fprintf(os.Stderr, "[apdu] SELECT MF skipped: %v\n", err)
+		}
+	}
+
+	fcp, err := selectByAID(card, aidHCA)
+	if err != nil {
+		return nil, fmt.Errorf("select HCA: %w", err)
+	}
+
+	rawPD, err := readEFCombined(card, sfiPD, efPD)
+	if err != nil {
+		return nil, fmt.Errorf("read EF.PD: %w", err)
+	}
+	pd, pdXML, err := ParsePD(rawPD)
+	if err != nil {
+		return nil, fmt.Errorf("parse EF.PD: %w", err)
+	}
+
+	rawVD, err := readEFCombined(card, sfiVD, efVD)
+	if err != nil {
+		return nil, fmt.Errorf("read EF.VD: %w", err)
+	}
+	vd, gvd, avdXML, gvdXML, err := ParseVD(rawVD)
+	if err != nil {
+		return nil, fmt.Errorf("parse EF.VD: %w", err)
+	}
+
+	return &CardData{
+		Personal:  pd,
+		Insurance: vd,
+		Protected: gvd,
+		RawPD:     rawPD,
+		RawVD:     rawVD,
+		XMLPD:     pdXML,
+		XMLAVD:    avdXML,
+		XMLGVD:    gvdXML,
+		HCAFCP:    fcp,
+	}, nil
+}
+
+// readEFCombined tries SFI access first, falls back to FID-based SELECT EF.
+func readEFCombined(card *scard.Card, sfi byte, fid uint16) ([]byte, error) {
+	data, sfiErr := readEFBySFI(card, sfi, fid)
+	if sfiErr == nil {
+		return data, nil
+	}
+	if os.Getenv("EGK_TRACE") == "1" {
+		fmt.Fprintf(os.Stderr, "[apdu] SFI read failed (%v), trying FID select\n", sfiErr)
+	}
+	if err := selectEF(card, fid); err != nil {
+		return nil, fmt.Errorf("SFI failed (%v); FID select failed: %w", sfiErr, err)
+	}
+	header, err := readBinary(card, 0, 0, 8)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]byte, 0, 4096)
+	out = append(out, header...)
+	for {
+		buf, err := readBinary(card, 0, uint16(len(out)), 0xFC)
+		if err != nil {
+			return nil, err
+		}
+		if len(buf) == 0 {
+			break
+		}
+		out = append(out, buf...)
+	}
+	return out, nil
+}
