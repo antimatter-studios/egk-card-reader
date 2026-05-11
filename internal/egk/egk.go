@@ -11,7 +11,8 @@ type CardData struct {
 	Personal  *PersonalData
 	Insurance *InsuranceData
 	Protected *ProtectedData
-	StatusVD  *StatusVD // freshness/state of EF.VD (nil if unreadable)
+	StatusVD  *StatusVD  // freshness/state of EF.VD (nil if unreadable)
+	ESIGN     *ESIGNData // X.509 certs from DF.ESIGN (nil if unreadable)
 	RawPD     []byte
 	RawVD     []byte
 	XMLPD     string // decompressed PD XML
@@ -80,12 +81,21 @@ func Read(card Card) (*CardData, error) {
 		return nil, fmt.Errorf("parse EF.VD: %w", err)
 	}
 
+	// DF.ESIGN cardholder X.509 certs — done LAST because selecting DF.ESIGN
+	// switches the current DF away from DF.HCA. Best-effort: cards that don't
+	// expose DF.ESIGN (or whose certs are missing) just yield a nil ESIGN.
+	esign, esignErr := readESIGN(card)
+	if esignErr != nil && os.Getenv("EGK_TRACE") == "1" {
+		fmt.Fprintf(os.Stderr, "[apdu] DF.ESIGN read skipped: %v\n", esignErr)
+	}
+
 	return &CardData{
 		MF:        mf,
 		Personal:  pd,
 		Insurance: vd,
 		Protected: gvd,
 		StatusVD:  status,
+		ESIGN:     esign,
 		RawPD:     rawPD,
 		RawVD:     rawVD,
 		XMLPD:     pdXML,

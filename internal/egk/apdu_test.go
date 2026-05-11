@@ -580,6 +580,10 @@ func TestReadEndToEnd(t *testing.T) {
 			// SELECT EF.StatusVD — report "not present" in this end-to-end test;
 			// dedicated TestReadStatusVD_* covers the happy path.
 			return []byte{0x6A, 0x82}, nil
+		case isSelectEFFID(apdu, 0xC500), isSelectEFFID(apdu, 0xC504):
+			// SELECT DF.ESIGN cert candidates — "not present" so readESIGN
+			// returns an empty ESIGNData without failing the whole read.
+			return []byte{0x6A, 0x82}, nil
 		case isSelectAID(apdu):
 			return append(append([]byte{}, fcp...), 0x90, 0x00), nil
 		case apdu[1] == insReadBinary:

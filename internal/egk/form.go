@@ -186,6 +186,14 @@ func DiagnosticFields(d *CardData) []FormField {
 			})
 		}
 	}
+	if e := d.ESIGN; e != nil {
+		for _, c := range []*Cert{e.C500, e.C504} {
+			if c == nil {
+				continue
+			}
+			fields = append(fields, certFields(c)...)
+		}
+	}
 	if d.MF != nil && d.MF.Version2 != nil {
 		v := d.MF.Version2
 		fields = append(fields,
@@ -200,6 +208,38 @@ func DiagnosticFields(d *CardData) []FormField {
 		)
 	}
 	return fields
+}
+
+// certFields renders one cert's most-useful X.509 fields (subject CN, issuer
+// CN, validity window, signature algorithm) as FormFields for the diagnostic
+// table. Works whether the cert parsed fully via crypto/x509 (RSA) or only
+// partially via the fallback ASN.1 walk (brainpool ECDSA).
+func certFields(c *Cert) []FormField {
+	if c == nil {
+		return nil
+	}
+	source := fmt.Sprintf("DF.ESIGN.EF.C(%04X)", c.FID)
+	algo := ""
+	algoNote := "Signature algorithm used to sign this cert by the issuing CA."
+	switch {
+	case c.Certificate != nil:
+		algo = c.Certificate.SignatureAlgorithm.String()
+	case c.SigAlgOID != nil:
+		algo = c.SigAlgOID.String()
+		algoNote += " (OID surfaced because crypto/x509 doesn't support the curve — likely brainpoolP256r1.)"
+	}
+	return []FormField{
+		{Label: fmt.Sprintf("Cert %04X Subject", c.FID), Value: c.Subject.CommonName, Source: source,
+			Note: "X.509 Subject CN — typically the cardholder name (Last, First)."},
+		{Label: fmt.Sprintf("Cert %04X Issuer", c.FID), Value: c.Issuer.CommonName, Source: source,
+			Note: "X.509 Issuer CN — the gematik PKI sub-CA that signed this cert."},
+		{Label: fmt.Sprintf("Cert %04X Valid From", c.FID), Value: c.NotBefore.Format("2006-01-02"), Source: source,
+			Note: "X.509 NotBefore."},
+		{Label: fmt.Sprintf("Cert %04X Valid Until", c.FID), Value: c.NotAfter.Format("2006-01-02"), Source: source,
+			Note: "X.509 NotAfter — after this date the cert is expired."},
+		{Label: fmt.Sprintf("Cert %04X Algorithm", c.FID), Value: algo, Source: source,
+			Note: algoNote},
+	}
 }
 
 // explainSelektiv decodes the Aerztlich/Zahnaerztlich code per gemSpec_eGK_Fach.
