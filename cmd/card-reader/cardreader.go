@@ -12,6 +12,7 @@ import (
 
 	"github.com/christhomas/card-reader/internal/document"
 	"github.com/christhomas/card-reader/internal/egk"
+	"github.com/christhomas/card-reader/internal/reader"
 )
 
 // pcscContext is the subset of *scard.Context that this package needs.
@@ -42,39 +43,25 @@ func setupCardReader() (*scard.Context, []string, error) {
 	return ctx, readers, nil
 }
 
-// loadCardData fetches CardData from either the card reader (input ==
-// "cardreader") or a file on disk (any other value, treated as a path). For
-// cardreader input the returned cleanup releases PC/SC + disconnects the card;
+// loadCardData fetches CardData from one of:
+//   - "cardreader"            → PC/SC (Cherry / OMNIKEY / any CCID reader)
+//   - "orga" or "orga:<path>" → Ingenico/Worldline ORGA 9xx over CDC-ACM
+//   - a file path             → parse a previously written .gdt / .hl7 / .fhir.json
+//
+// For the two reader inputs the returned cleanup closes the underlying handles;
 // for file input cleanup is nil.
 func loadCardData(input string) (*egk.CardData, func(), error) {
-	if input == "cardreader" {
-		ctx, readers, err := setupCardReader()
-		if err != nil {
-			return nil, nil, err
+	switch {
+	case input == "cardreader":
+		return loadCardDataPCSC()
+	case input == "orga" || strings.HasPrefix(input, "orga:"):
+		dev := ""
+		if strings.HasPrefix(input, "orga:") {
+			dev = strings.TrimPrefix(input, "orga:")
 		}
-		fmt.Fprintln(os.Stderr, "Waiting for card insertion (15s)...")
-		reader, err := waitForCard(ctx, readers, 15*time.Second)
-		if err != nil {
-			ctx.Release()
-			return nil, nil, err
-		}
-		card, err := ctx.Connect(reader, scard.ShareShared, scard.ProtocolAny)
-		if err != nil {
-			ctx.Release()
-			return nil, nil, fmt.Errorf("connect: %w", err)
-		}
-		data, err := egk.Read(card)
-		cleanup := func() {
-			card.Disconnect(scard.LeaveCard)
-			ctx.Release()
-		}
-		if err != nil {
-			return nil, cleanup, fmt.Errorf("read eGK: %w", err)
-		}
-		return data, cleanup, nil
+		return loadCardDataORGA(dev)
 	}
 
-	// File input — never touches PC/SC.
 	if _, err := os.Stat(input); err != nil {
 		return nil, nil, fmt.Errorf("input %q: %w", input, err)
 	}
@@ -101,6 +88,37 @@ func loadCardData(input string) (*egk.CardData, func(), error) {
 	default:
 		return nil, nil, fmt.Errorf("unsupported input file %q (supported: .gdt, .hl7, .fhir.json)", filepath.Base(input))
 	}
+}
+
+// loadCardDataPCSC routes the PC/SC path through the reader factory.
+func loadCardDataPCSC() (*egk.CardData, func(), error) {
+	fmt.Fprintln(os.Stderr, "Waiting for card insertion (15s)...")
+	return loadCardDataVia(reader.Options{Force: "generic"})
+}
+
+// loadCardDataORGA routes the ORGA path through the reader factory. devNode
+// may be empty to auto-detect the first /dev/cu.usbmodem* device.
+func loadCardDataORGA(devNode string) (*egk.CardData, func(), error) {
+	return loadCardDataVia(reader.Options{Force: "orga", ORGADevNode: devNode})
+}
+
+// loadCardDataVia is the common path: open a reader session via the factory,
+// read the eGK in slot 1, return the parsed data plus a cleanup hook.
+func loadCardDataVia(opts reader.Options) (*egk.CardData, func(), error) {
+	s, err := reader.Open(opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	cleanup := func() { _ = s.Close() }
+	card, err := s.Slot(1)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("reader slot 1: %w", err)
+	}
+	data, err := egk.Read(card)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("read eGK: %w", err)
+	}
+	return data, cleanup, nil
 }
 
 // waitForCard does single-flight polling — never overlaps PC/SC calls.
