@@ -1,20 +1,32 @@
 # card-reader
 
-Reads a German eGK (elektronische Gesundheitskarte) over PC/SC, decodes the public insurance data, and re-emits it in any of four clinical-exchange formats (GKV billing form, GDT 2.10, HL7 v2.5 ADT, HL7 FHIR R4) — or parses one of those formats back from disk and shows you what it understood.
+Reads a German eGK (elektronische Gesundheitskarte) and emits the data in any of four clinical-exchange formats (GKV billing form, GDT 2.10, HL7 v2.5 ADT, HL7 FHIR R4) — or parses one of those formats back from disk and shows what it understood.
+
+Two transports are supported transparently behind a unified driver abstraction:
+
+- **PC/SC** — any standard CCID reader (Cherry ST-2100, OMNIKEY 3121, REINER cyberJack, Identiv uTrust, …) via the OS smart-card stack.
+- **ORGA 9xx** (Ingenico/Worldline) — direct over USB-CDC-ACM. No vendor driver needed; the transport is plain ISO 7816-3 T=1 over a virtual serial port. Auto-detected by USB VID/PID `0780:1202`. See [docs/orga-driver/](docs/orga-driver/) for the investigation that led to this implementation.
+
+A `--input` file path also works without any reader at all — same data shape, four input formats parsed.
 
 Read once, render, exit. No TUI, no input loop.
 
+This repository additionally includes a complete implementation of the **gemSpec_COS chapter 13 card-to-card (C2C) handshake** for PIN-protected eGK segments (NFD, DPE, eMP). The crypto and APDU sequencing are in place; end-to-end execution is blocked by hardware availability (see [Reading PIN-protected data](#reading-pin-protected-data) below).
+
 ## Requirements
 
-- **A real CCID smart-card reader** (USB). Generic SD/MMC readers are *not* smart-card readers — even if macOS shows them via PC/SC they cannot power the eGK chip. If your card status reads `PRESENT|MUTE` with an empty ATR, that's the symptom.
-- **macOS / Windows**: PC/SC is built into the OS.
-- **Linux**: `sudo apt install pcscd pcsc-tools libpcsclite-dev` and `sudo systemctl start pcscd`.
+- **A real CCID smart-card reader** (USB), OR an **Ingenico/Worldline ORGA 9xx** terminal. Generic SD/MMC readers are *not* smart-card readers — even if macOS shows them via PC/SC they cannot power the eGK chip. If your card status reads `PRESENT|MUTE` with an empty ATR, that's the symptom.
+- **macOS**: PC/SC is built in; ORGA works out of the box via the kernel's `AppleUSBCDCACM` driver — no extra installation.
+- **Linux**: `sudo apt install pcscd pcsc-tools libpcsclite-dev` and `sudo systemctl start pcscd` for the PC/SC path; ORGA uses `/sys/bus/usb/devices` directly (no extra package).
+- **Windows**: PC/SC built in. ORGA support is currently a stub (TODO: SetupAPI / WMI enumeration — see [internal/reader/usb/windows.go](internal/reader/usb/windows.go)).
 - File-input mode (`--input <path>`) does not need a reader.
 
 ## Build
 
 ```sh
-go build -o card-reader ./cmd/card-reader
+go build -o card-reader ./cmd/card-reader   # main binary
+go build -o orga-probe  ./cmd/orga-probe    # low-level ORGA probe / debug tool
+go build -o card-probe  ./cmd/card-probe    # PC/SC reader-discovery probe
 ```
 
 ## Architecture at a glance
@@ -24,24 +36,53 @@ go build -o card-reader ./cmd/card-reader
 │  Input acquisition  │       │  Enrichment           │       │  Rendering           │
 │                     │       │                       │       │                      │
 │  ┌───────────────┐  │       │  IKNR ──┐             │       │  ┌────────────────┐  │
-│  │ PC/SC reader  │──┼──┐    │         ▼             │       │  │ comprehension  │  │
-│  └───────────────┘  │  │    │    ktda.json          │       │  │ table (stdout) │  │
-│  ┌───────────────┐  │  │    │  ┌─────────────────┐  │       │  └────────────────┘  │
-│  │ .gdt file     │──┼──┤    │  │ IK → Name,      │  │       │  ┌────────────────┐  │
-│  └───────────────┘  │  │    │  │      VKNR,      │  │       │  │ raw-bytes file │  │
-│  ┌───────────────┐  │  ├──▶ │  │      Kassenart, │ ─┼──┬──▶ │  │ ./output/...   │  │
-│  │ .hl7 file     │──┼──┤    │  │      validity,  │  │  │    │  └────────────────┘  │
-│  └───────────────┘  │  │    │  │      links      │  │  │    └──────────────────────┘
-│  ┌───────────────┐  │  │    │  └─────────────────┘  │  │
-│  │ .fhir.json    │──┼──┘    │         │             │  │
-│  └───────────────┘  │       │         ▼             │  │
-└─────────────────────┘       │   IKInfo {Name,VKNR,  │  │
-                              │    Kassenart,KTG}     │  │
+│  │ ORGA / PC/SC  │──┼──┐    │         ▼             │       │  │ comprehension  │  │
+│  │ (autodetect)  │  │  │    │    ktda.json          │       │  │ table (stdout) │  │
+│  └───────────────┘  │  │    │  ┌─────────────────┐  │       │  └────────────────┘  │
+│  ┌───────────────┐  │  │    │  │ IK → Name,      │  │       │  ┌────────────────┐  │
+│  │ .gdt file     │──┼──┤    │  │      VKNR,      │  │       │  │ raw-bytes file │  │
+│  └───────────────┘  │  ├──▶ │  │      Kassenart, │ ─┼──┬──▶ │  │ ./output/...   │  │
+│  ┌───────────────┐  │  │    │  │      validity,  │  │  │    │  └────────────────┘  │
+│  │ .hl7 file     │──┼──┤    │  │      links      │  │  │    └──────────────────────┘
+│  └───────────────┘  │  │    │  └─────────────────┘  │  │
+│  ┌───────────────┐  │  │    │         │             │  │
+│  │ .fhir.json    │──┼──┘    │         ▼             │  │
+│  └───────────────┘  │       │   IKInfo {Name,VKNR,  │  │
+└─────────────────────┘       │    Kassenart,KTG}     │  │
                               └───────────┬───────────┘  │
                                           ▼              │
                                    CardData + IKInfo ────┘
                                    (one shape, four renderers)
 ```
+
+### Reader-driver layering
+
+The "ORGA / PC/SC (autodetect)" box hides a small abstraction:
+
+```
+cmd/card-reader, cmd/orga-probe
+            ↓
+internal/reader    ← Session + Card interfaces, Probe factory, DeviceInfo
+            ↓
+   ┌────────┴────────┐
+   ↓                 ↓
+internal/reader/    internal/reader/
+  generic             orga
+   ↓                 ↓
+PC/SC (CCID)        T=1 over CDC-ACM
+ebfe/scard          (own implementation, ~250 LoC)
+   ↓                 ↓                ↓
+Cherry, OMNIKEY,    ORGA 930 M ──→  internal/reader/usb
+REINER cyberJack,                     (darwin: ioreg,
+Identiv uTrust, …                      linux:  /sys/bus/usb,
+                                       windows: stub)
+```
+
+- `internal/reader.Card` is the minimal contract — `Transmit(apdu []byte) ([]byte, error)`. Both `*orga.Slot` and `*generic.Card` satisfy it structurally; the eGK reader code in `internal/egk` doesn't know which is underneath.
+- `reader.Detect()` probes the system (USB VID/PID match for ORGA via the OS-specific `internal/reader/usb/` layer, then PC/SC daemon listing) and returns the best-priority driver.
+- `Session.Identify() DeviceInfo` returns manufacturer / product / serial / device path / VID-PID / firmware / selection reason — every read prints these to stderr so you can see which device was chosen and why.
+
+Full architecture write-up: [docs/reader-architecture.md](docs/reader-architecture.md).
 
 1. **Acquire** — read live over PC/SC, or parse a previously written `.gdt` / `.hl7` / `.fhir.json`. Both paths land in the same internal `CardData` shape (see [internal/egk/egk.go](internal/egk/egk.go)).
 2. **Enrich** — the eGK carries the insurer's `IKNR` and display name, but not the `VKNR`, `Kassenart`, or `Kostenträgergruppe` that German practice-management forms demand. Those come from `ktda.json`, a compiled lookup table derived from six quarterly KE0 files (see [KTDA — the insurer lookup table](#ktda--the-insurer-lookup-table)).
@@ -51,7 +92,7 @@ The `Encoder` and `Writer` interfaces ([internal/document/document.go](internal/
 
 ## How the eGK read pipeline works
 
-The eGK is a Java-Card chip card. The `internal/egk` package talks to it via the OS PC/SC stack with raw ISO 7816-4 APDUs.
+The eGK is a Java-Card chip card. The `internal/egk` package talks to it via raw ISO 7816-4 APDUs over whichever transport the reader factory picked (PC/SC or ORGA T=1).
 
 ```
 PC/SC → SELECT MF (3F00, optional)
@@ -312,12 +353,15 @@ card-reader ktda <subcommand> [ARGS]
 
 | Value | Effect |
 | --- | --- |
-| `cardreader` (default) | Read live from a connected PC/SC reader |
+| `cardreader` (default) | Auto-detect — ORGA (USB VID/PID `0780:1202`) wins, else PC/SC |
+| `orga` | Force the ORGA driver |
+| `orga:/dev/cu.usbmodemXXX` | Force the ORGA driver on a specific serial device |
+| `pcsc` or `generic` | Force the PC/SC driver |
 | `<path>` to `.gdt` | Parse GDT 2.10 Satzart 6301 |
 | `<path>` to `.hl7` | Parse HL7 v2.5 ADT |
 | `<path>` to `.fhir.json` | Parse FHIR R4 Bundle (Patient + Coverage) |
 
-File input never touches PC/SC — you can run `card-reader --input file.gdt` on a machine without a reader.
+File input never touches any reader — you can run `card-reader --input file.gdt` on a machine without one.
 
 ### Output format — `--output`
 
@@ -340,7 +384,35 @@ When `--input` is a file and `--output` is omitted, the format defaults to whate
 
 - `--glossary` — append the source-code / form-label / KTAB / acronym reference tables under the comprehension table. Off by default.
 - `-d` / `--debug` — list readers, watch state changes, and dump raw decompressed EF.PD / EF.VD XML. Cardreader input only.
-- `EGK_TRACE=1` — log low-level APDU / SFI-fallback chatter to stderr.
+- `EGK_TRACE=1` — log high-level APDU / SFI-fallback chatter to stderr.
+- `ORGA_TRACE=1` — log every T=1 block sent/received by the ORGA driver, with millisecond timestamp + PCB classification.
+
+### Companion binaries
+
+```sh
+# Low-level ORGA probe / debug tool — never used in normal billing flow,
+# but indispensable for investigating new cards or terminal firmware:
+orga-probe -info                    # CT-BCS terminal info
+orga-probe -status 1                # slot status (1 = front / eGK, 2 = back / SMC)
+orga-probe -activate 1              # power up slot, print ATR
+orga-probe -identify 2              # full identity probe — emits structured markdown
+orga-probe -slot 1 -apdu "00 A4 00 0C 02 3F 00"
+                                    # send a raw APDU to a slot (read-only by default;
+                                    # VERIFY / UPDATE / ERASE refused unless
+                                    # -UNSAFE-allow-pin-write is set)
+orga-probe -readcert 2 -aid "A0 00 00 01 67 45 53 49 47 4E" -fid "C5 00" -out cert.der
+                                    # extract an X.509 cert from a card EF + parse
+orga-probe -c2c 2 -c2c-test-roots=true
+                                    # drive C2C Discover + Validate phases against
+                                    # the card in slot 2, emit a structured report
+
+# PC/SC reader-discovery probe (pre-dates the orga work):
+card-probe                          # list connected readers + status flags
+```
+
+See [cmd/orga-probe/](cmd/orga-probe/) for the full flag set and
+[docs/orga-driver/](docs/orga-driver/) for the wire-protocol investigation that
+produced the driver.
 
 ## Examples
 
@@ -368,7 +440,68 @@ card-reader ktda update
 
 # Look up a single IK
 card-reader ktda lookup 109519005
+
+# Force the ORGA driver (skip PC/SC even if a CCID reader is also plugged in)
+card-reader --input orga --output json --file
+
+# Trace every T=1 block to stderr (debugging an ORGA terminal issue)
+ORGA_TRACE=1 card-reader --output json --file
 ```
+
+## Reading PIN-protected data
+
+The eGK carries two classes of data:
+
+- **Public** — `EF.PD` and `EF.VD` (insurance master data + billing). No PIN, no authentication. This is what the default read pipeline handles, and what every German practice's billing workflow uses.
+- **PIN-protected** — `EF.NFD` (Notfalldaten), `EF.DPE` (persönliche Erklärungen), `EF.eMP` (Medikationsplan), and the eRezept / ePA pointers. These require a card-to-card (C2C) handshake between the eGK and an authenticating SMC-B, after which the cardholder's PIN unlocks the segment.
+
+This repository contains a complete implementation of the gemSpec_COS chapter 13 C2C handshake under [internal/c2c/](internal/c2c/). Five phases are implemented and unit-tested:
+
+| Phase | Purpose | File |
+| --- | --- | --- |
+| 1. DiscoverPeerCerts | Read SMC-B CV-cert chain off the card by FID sweep | [discover.go](internal/c2c/discover.go) |
+| 2. ValidatePeerChain | Verify chain locally against the embedded gematik CVC-Roots | [handshake.go](internal/c2c/handshake.go), [keys/](internal/c2c/keys/) |
+| 3. PresentToVerifier | Push the chain into the eGK via MSE SET DST + PSO VERIFY CERTIFICATE | [phase_present.go](internal/c2c/phase_present.go) |
+| 4. MutualAuthenticate | GET CHALLENGE on eGK → INTERNAL AUTHENTICATE on SMC-B → EXTERNAL AUTHENTICATE on eGK | [phase_mutual.go](internal/c2c/phase_mutual.go) |
+| 5. OpenSecureChannel | Derive AES K_ENC / K_MAC / SSC → `*sm.Session` for subsequent SM-protected APDUs (VERIFY PIN, READ BINARY) | [phase_secure.go](internal/c2c/phase_secure.go) |
+
+Supporting subpackages:
+
+| Subpackage | Purpose |
+| --- | --- |
+| [internal/c2c/cvcert/](internal/c2c/cvcert/) | BER-TLV parser for BSI TR-03110 / gemSpec_PKI CV-certs (tag 7F21 / 7F4E / 5F37) |
+| [internal/c2c/brainpool/](internal/c2c/brainpool/) | Brainpool P-256r1 / P-384r1 / P-512r1 curve arithmetic + ECDSA verify (Go stdlib has no Brainpool) |
+| [internal/c2c/keys/](internal/c2c/keys/) | gematik X.509 TSL roots + 4 embedded CVC-Roots (DEZGW870226 production active + DEGXX890225/880224/870222 test) + chain validation |
+| [internal/c2c/sm/](internal/c2c/sm/) | gemSpec_COS §10 Secure Messaging Wrap/Unwrap + AES-CMAC per NIST SP 800-38B |
+
+### The four walls
+
+PIN-protected reads require **all four** to be true simultaneously:
+
+1. **Driver** — the host can talk to the terminal. ✅ Done — ORGA driver works on macOS / Linux.
+2. **SMC-B with valid CV-certs** — a partner card carrying a chain to gematik's production CVC-Root. ❌ Out of reach without registration as a Leistungserbringer (healthcare provider with KV registration).
+3. **Cardholder PIN** — issued by the Krankenkasse separately from the card (request via TK-App / VideoIdent / Geschäftsstelle; arrives by Einschreiben). 🟡 In hand or obtainable, but using it is blocked behind a mechanical safety guard until Wall 2 is satisfied — a wrong VERIFY decrements an on-card counter that never decays, three strikes locks the PIN, and only the PUK can reset.
+4. **gemSpec_COS C2C in code** — implementation of phases 1-5. ✅ Done — 404 tests across the c2c packages.
+
+If Walls 1, 3, and 4 are satisfied but Wall 2 is not (the current state), the code is unable to read PIN-protected data — the handshake fails at phase 3 with `SW=6300` because the eGK rejects a cert that doesn't chain to its on-card production CVC-Root. The PIN itself is never sent.
+
+**Full reading order**:
+
+- [docs/c2c/README.md](docs/c2c/README.md) — package overview, status table, live-probe instructions
+- [docs/c2c/walls.md](docs/c2c/walls.md) — the four-walls model: criteria, current state, evidence per wall
+- [docs/c2c/pin-workflow.md](docs/c2c/pin-workflow.md) — PIN provenance (Krankenkasse), counter math, when VERIFY will actually be issued
+- [docs/c2c/cvc-root-research.md](docs/c2c/cvc-root-research.md) — provenance log for all 15 gematik CVC-Root certs, current active anchors, source URLs and fingerprints
+- [docs/c2c/slot2-no-cvcerts.md](docs/c2c/slot2-no-cvcerts.md) — finding that the project's reference test SMC-B doesn't carry CV-certs (additional wall)
+- [docs/c2c/plan.md](docs/c2c/plan.md) — the original implementation plan (now mostly retrospective)
+
+### Mechanical safety guard
+
+The ORGA driver refuses dangerous APDUs at `Slot.Transmit` time unless `Options.AllowPINWrite=true` (or the `-UNSAFE-allow-pin-write` CLI flag). The list ([internal/reader/orga/safety.go](internal/reader/orga/safety.go)) covers:
+
+- ISO 7816: `0x20` VERIFY, `0x24` CHANGE REFERENCE DATA, `0x26`/`0x28` DISABLE/ENABLE VERIFICATION REQUIREMENT, `0x2C` RESET RETRY COUNTER, `0xD6` UPDATE BINARY, `0xDC` UPDATE RECORD, `0xDA` PUT DATA, `0xE0`/`0x0E` ERASE BINARY, `0xEE` ERASE RECORD
+- CT-BCS: `0x16` INPUT, `0x18` PERFORM VERIFICATION, `0x19` MODIFY VERIFICATION DATA (any of which can drive the terminal pinpad and trigger a VERIFY on the card)
+
+The block exists so a hex-byte typo in a probe session can never burn a PIN attempt. A wrong VERIFY decrements the on-card retry counter atomically inside the secure element; the counter doesn't decay over time; three strikes blocks the PIN. The fourth and tenth wrong PUKs lock the card permanently for protected reads.
 
 ## Output formats — at a glance
 
@@ -393,60 +526,147 @@ Sender / receiver / practice IDs (GDT 0201/0203/0205, HL7 MSH-3..6) ship as plac
 ## Project layout
 
 ```
-cmd/card-reader/main.go          # entry point — dispatches ktda subcommand or main pipeline
-cmd/card-reader/cli.go           # flag parser, --help text, output/extension mapping
-cmd/card-reader/cardreader.go    # PC/SC setup, card-vs-file input dispatch, debug dump
-cmd/card-reader/ktda_cmd.go      # ktda update / lookup / info subcommands; resolveIK helper
-cmd/card-reader/render.go        # lipgloss chrome (title bar) + form-table renderer
-cmd/card-reader/glossary.go      # source / form-label / KTAB / acronym reference tables
+cmd/
+├── card-reader/main.go              # entry point — dispatches ktda subcommand or main pipeline
+├── card-reader/cli.go               # flag parser, --help text, output/extension mapping
+├── card-reader/cardreader.go        # input dispatch (auto / orga / pcsc / file), Identify output
+├── card-reader/ktda_cmd.go          # ktda update / lookup / info subcommands; resolveIK helper
+├── card-reader/render.go            # lipgloss chrome (title bar) + form-table + diagnostics
+├── card-reader/glossary.go          # source / form-label / KTAB / acronym reference tables
+│
+├── card-probe/main.go               # PC/SC reader-discovery probe (debug aid)
+│
+└── orga-probe/                      # low-level ORGA debug tool
+    ├── main.go                      # flag parsing, command dispatch
+    ├── identify.go                  # -identify <slot>: structured card-identity dump
+    ├── readcert.go                  # -readcert: extract + parse X.509 from a card EF
+    ├── c2c.go                       # -c2c <slot>: drive C2C Discover + Validate phases
+    ├── atr.go                       # ATR decoder (TS / T0 / TA1 / TBn / TCn / TDn / TCK)
+    └── tlv.go                       # BER-TLV decoder for EF.ATR vendor records
 
-internal/egk/apdu.go             # PC/SC APDUs (SELECT by AID, READ BINARY by SFI / FID fallback)
-internal/egk/egk.go              # high-level Read(card) → CardData (selects DF.HCA, reads PD + VD)
-internal/egk/parse.go            # gunzip + XML decode (ISO-8859-15) for PD / AVD / GVD
-internal/egk/form.go             # 21-field FormMapping with optional KTDA enrichment
+internal/reader/                     # reader-driver abstraction
+├── reader.go                        # Card + Session interfaces, Options, Open() factory
+├── probe.go                         # Probe / Detect / Driver / OpenDriver
+├── generic/                         # PC/SC driver (Cherry, OMNIKEY, cyberJack, …)
+├── orga/                            # ORGA 9xx driver (T=1 over CDC-ACM, ~250 LoC)
+│   ├── orga.go                      # Terminal type, Open, Close, slot routing
+│   ├── transport.go                 # T=1 block build/parse, LRC EDC
+│   ├── exchange.go                  # transactWithNAD, RESYNCH, IFS/WTX auto-ack, chaining
+│   ├── ctbcs.go                     # CT-BCS helpers (RESET, REQUEST_ICC, GET_STATUS, EJECT)
+│   ├── safety.go                    # mechanical block on VERIFY / UPDATE / ERASE / etc.
+│   ├── errors.go                    # friendly mapping for ENXIO / ENOENT / EACCES / EBUSY
+│   ├── trace.go                     # ORGA_TRACE=1 hooks — timestamped T=1 block log
+│   └── serial_darwin.go             # termios open at 9600 8N1 (darwin only)
+└── usb/                             # cross-OS USB enumeration
+    ├── usb.go                       # Probe interface, Device struct, Default(), ErrUnsupported
+    ├── darwin.go                    # parse `ioreg -r -c IOUSBHostDevice -l -w0`
+    ├── linux.go                     # read /sys/bus/usb/devices/ directly (no lsusb / libusb)
+    ├── windows.go                   # stub returning ErrUnsupported (TODO SetupAPI)
+    └── other.go                     # catch-all stub for other GOOS
 
-internal/ktda/ke0.go             # KE0 EDIFACT parser (UNB/UNH/IDK/VDT/VKG/NAM/UNT)
-internal/ktda/fetch.go           # scrape gkv-datenaustausch index, download KE0 files
-internal/ktda/store.go           # merge → ktda.json, lookup, Kassenart→Kostenträgergruppe
+internal/c2c/                        # gemSpec_COS chapter 13 card-to-card authentication
+├── doc.go + handshake.go            # 5-phase orchestrator, typed *c2c.Error, Session()
+├── discover.go                      # CV-cert FID sweep on a card (DF.SMA / DF.ESIGN fallback)
+├── phase_present.go                 # MSE SET DST + PSO VERIFY CERTIFICATE (phase 3)
+├── phase_mutual.go                  # GET CHALLENGE / INT-AUTH / EXT-AUTH (phase 4)
+├── phase_secure.go                  # AES-128 KDF (gemSpec_Krypt Algorithm-2) → *sm.Session (phase 5)
+├── cvcert/                          # BSI TR-03110 / gemSpec_PKI CV-cert ASN.1 parser
+├── brainpool/                       # Brainpool P-256r1 / P-384r1 / P-512r1 + ECDSA verify
+├── keys/                            # gematik X.509 TSL roots + embedded CVC-Roots + chain verify
+└── sm/                              # gemSpec_COS §10 Secure Messaging + AES-CMAC
 
-internal/document/document.go    # Encoder interface + format registry
-internal/document/gdt.go         # GDT 2.10 encoder
-internal/document/gdt_parse.go   # GDT 2.10 parser (file → CardData)
-internal/document/gdt_table.go   # GDT comprehension-view renderer
-internal/document/fhir.go        # FHIR R4 encoder
-internal/document/fhir_parse.go  # FHIR R4 parser
-internal/document/fhir_table.go  # FHIR comprehension-view renderer
-internal/document/hl7v2.go       # HL7 v2.5 ADT^A04 encoder
-internal/document/hl7v2_parse.go # HL7 v2 parser
-internal/document/hl7v2_table.go # HL7 v2 comprehension-view renderer
-internal/document/json.go        # form-mapping JSON encoder
-internal/document/*_test.go      # round-trip tests (encode → parse → compare)
+internal/egk/
+├── apdu.go                          # SELECT by AID, READ BINARY by SFI / FID fallback
+├── egk.go                           # high-level Read(card) → CardData
+├── parse.go                         # gunzip + XML decode (ISO-8859-15) for PD / AVD / GVD
+└── form.go                          # FormMapping with optional KTDA enrichment
 
-internal/output/output.go        # Writer interface — Stdout, File, Multi
+internal/ktda/
+├── ke0.go                           # KE0 EDIFACT parser (UNB/UNH/IDK/VDT/VKG/NAM/UNT)
+├── fetch.go                         # scrape gkv-datenaustausch index, download KE0 files
+└── store.go                         # merge → ktda.json, lookup, Kassenart→Kostenträgergruppe
 
-cmd/card-probe/main.go           # standalone PC/SC reader-discovery probe (debug aid)
+internal/document/
+├── document.go                      # Encoder interface + format registry
+├── gdt.{go,_parse.go,_table.go}     # GDT 2.10 (Satzart 6301) encode + parse + comprehension view
+├── fhir.{go,_parse.go,_table.go}    # HL7 FHIR R4 (Patient + Coverage Bundle) encode + parse + view
+├── hl7v2.{go,_parse.go,_table.go}   # HL7 v2.5 ADT^A04 encode + parse + view
+├── json.go                          # form-mapping JSON encoder
+└── *_test.go                        # round-trip tests (encode → parse → compare)
 
-ktda-files/                      # populated by `ktda update` — gitignored
-├── raw/                         # downloaded KE0 binaries (6× per quarter)
-└── ktda.json                    # compiled, deduplicated lookup table
+internal/output/output.go            # Writer interface — Stdout, File, Multi
 
-output/                          # populated by `--file` runs — gitignored
+docs/
+├── reader-architecture.md           # reader-driver layering + USB-enumeration matrix
+├── c2c/                             # gemSpec_COS C2C handshake docs (5 markdown pages)
+├── orga-driver/                     # ORGA wire-protocol investigation (7 numbered pages + cards/)
+├── output-formats.md                # detailed format specs (field maps, sub-parameter plans)
+└── test-plan.md
+
+ktda-files/                          # populated by `ktda update` — gitignored
+├── raw/                             # downloaded KE0 binaries (6× per quarter)
+└── ktda.json                        # compiled, deduplicated lookup table
+
+output/                              # populated by `--file` runs — gitignored
 └── patient-<KVNR>-<ts>.<ext>
 ```
 
-## Limits
+## What's implemented vs not
 
-- Only the public, no-PIN data is read. PIN-protected applications (NFD, DPE, ePrescription pointers, ePA links) need CV-cert authentication and aren't covered.
-- KTAB is a tiny static table (11 codes); no live KBV download.
-- KE0 files are the **SoLE** (Sonstige Leistungserbringer) variant. They contain the IK→VKNR mapping we need; the dedicated KBV physician-billing Kostenträgerstammdatei (vendor-distribution only) is not used.
-- Sub-parameter syntax (`--output=hl7-adt=a28` etc.) is documented but not implemented yet — flags accept no arguments today.
-- Sender / receiver / practice IDs are placeholders in every encoder. Real deployments must override before sending downstream.
+### Implemented (working today)
+
+- **Public eGK read pipeline** over PC/SC or ORGA — `EF.PD` + `EF.VD`, gunzip + ISO-8859-15 XML decode, full GKV form mapping with KTDA enrichment.
+- **Format conversion** — GDT 2.10 / HL7 v2.5 ADT^A04 / HL7 FHIR R4 / JSON, all bidirectional (encode + parse + comprehension table). Round-trip tested.
+- **ORGA 9xx driver on macOS + Linux** — ISO 7816-3 T=1 over USB-CDC-ACM. USB VID/PID detection (no false positives from generic CDC-ACM devices). RESYNCH, IFS / WTX auto-ack, chained I-blocks. Recovery procedure for "Fatal Error 3 / SW=64A2" documented and tested.
+- **Reader-driver abstraction** — `Session` + `Card` interfaces, factory with autodetect, `Identify() DeviceInfo` for self-describing transports. Cross-OS USB probe (macOS ioreg, Linux sysfs, Windows stub, fallback stub).
+- **gemSpec_COS C2C handshake — all 5 phases** — code-complete and unit-tested. CV-cert BER-TLV parser, Brainpool P-256/384/512r1 ECC, gemSpec_COS Secure Messaging (AES-CBC + AES-CMAC), gematik CVC-Root + X.509 TSL trust anchors embedded.
+- **Mechanical safety guard** — PIN-counter-decrementing APDUs (VERIFY, CHANGE REFERENCE DATA, RESET RETRY COUNTER) refused at the driver layer unless explicitly overridden.
+- **Tracing** — `ORGA_TRACE=1` for T=1 block log; `EGK_TRACE=1` for APDU / SFI-fallback log.
+- **KTDA quarterly refresh** — scrape `gkv-datenaustausch.de`, download 6 KE0 files, parse EDIFACT, merge, store as `ktda.json`.
+- **Companion debug tools** — `orga-probe -identify`, `-readcert`, `-c2c`, plus the older `card-probe` for PC/SC.
+
+### Not yet implemented
+
+- **PIN-protected eGK reads (NFD / DPE / eMP)** — the code path is complete; the live execution is blocked by **Wall 2** (no production SMC-B available). Available test SMC-B doesn't carry CV-certs anyway. See [docs/c2c/walls.md](docs/c2c/walls.md).
+- **Windows ORGA support** — `internal/reader/usb/windows.go` is a stub returning `ErrUnsupported`. TODO: SetupAPI (`SetupDiGetClassDevs`) or WMI (`Get-PnpDevice`) enumeration to match the macOS/Linux behaviour.
+- **Older inactive gematik CVC-Root predecessors** (1st-6th production generations, `DEZGW810214`…`DEZGW860224`) not yet embedded — current active root + 3 test gens are in. Add when X/Y coordinates can be extracted directly from the source DERs.
+- **External Brainpool ECDSA KAT** — current ECDSA verification is consistency-tested with self-derived signatures; an externally-vetted vector (BSI TR-03111 / wycheproof) should be added before production reliance on Brainpool signatures.
+- **Sub-parameter syntax** — `--output=hl7-adt=a28,version=2.3` etc. is designed but not wired up; flags accept no arguments today. See [docs/output-formats.md](docs/output-formats.md).
+- **Real sender / receiver / practice IDs** — GDT 0201/0203/0205, HL7 MSH-3..6, FHIR `MessageHeader.source` ship as placeholders. Real deployments must override before sending downstream.
+- **SMC-B C2C direction 2** — only Direction 1 of the mutual auth is wired (eGK challenges SMC-B). The reverse (SMC-B challenges eGK) isn't needed for unlocking eGK protected reads but would be needed for full symmetric SM.
+- **KE0 variant** — files used are the **SoLE** (Sonstige Leistungserbringer) variant. They contain the IK→VKNR mapping we need; the dedicated KBV physician-billing Kostenträgerstammdatei (vendor-distribution only) is not used.
+
+### Hardware caveats
+
+- The ORGA driver has been live-tested only on macOS against an Ingenico ORGA 930 M with firmware `V5.03 7.05`. The implementation per spec should cover the whole 9xx family but cross-firmware validation hasn't happened.
+- The KE0 index scrape depends on the `gkv-datenaustausch.de` page structure. If they redesign the page, the regex in [internal/ktda/fetch.go](internal/ktda/fetch.go) may need updating.
 - Encoding fidelity: gematik XML declares ISO-8859-15; the decoder honours that explicitly. GDT bytes are written ISO-8859-15; FHIR / HL7 v2 / JSON are UTF-8.
-- The KE0 index scrape depends on the gkv-datenaustausch.de page structure. If they redesign the page, the regex in [internal/ktda/fetch.go](internal/ktda/fetch.go) may need updating.
+- KTAB is a tiny static table (11 codes); no live KBV download.
 
 ## Troubleshooting
 
-`PRESENT|MUTE` with empty ATR → reader sees a card mechanically but no chip is responding. Causes (in likely order): card upside-down, card in the wrong slot of a multi-slot reader, dirty contacts, or the "reader" is actually an SD-card reader (can't power chip cards). Flip / reseat / clean / use a real CCID reader.
+### Reader detection
+
+`reader/orga: no ORGA terminal detected (VID 0x0780 / PID 0x1202)` → the USB probe found no matching device. Check `ioreg -r -c IOUSBHostDevice -l -w0 | grep ORGA` (macOS) or `lsusb | grep 0780` (Linux); if absent, the terminal isn't enumerated — check the cable / power / DFU mode (PID `0xDF55` instead of `0x1202`).
+
+`PRESENT|MUTE` with empty ATR (PC/SC) → reader sees a card mechanically but no chip is responding. Causes (in likely order): card upside-down, card in the wrong slot of a multi-slot reader, dirty contacts, or the "reader" is actually an SD-card reader (can't power chip cards). Flip / reseat / clean / use a real CCID reader.
+
+`PC/SC: no readers found` → on Linux, ensure `pcscd` is running (`sudo systemctl start pcscd`).
+
+### ORGA terminal in a bad state
+
+`device not configured` (ENXIO) → the kernel sees the `/dev/cu.usbmodem*` node but the USB endpoint isn't responding. Usually means the terminal is mid-reboot. Wait ~5 seconds; the driver maps the errno to a friendly message with recovery hints. If it persists, unplug + replug the USB cable.
+
+Every APDU to slot 2 returns `SW=64A2` (vendor-specific "card not in operational state") → the slot-2 card is stuck after a terminal reset. Recover by power-cycling the slot with CT-BCS REQUEST ICC P2=01:
+
+```sh
+./orga-probe -slot 0 -apdu "20 12 02 01 00"   # returns ATR + SW=6201
+./orga-probe -slot 2 -apdu "00 A4 00 0C 02 3F 00"   # SELECT MF now works (9000)
+```
+
+Full incident write-up: [docs/orga-driver/07-card-recovery.md](docs/orga-driver/07-card-recovery.md).
+
+### Other
 
 `SELECT EF 2F01 failed: SW=6A82` would mean FID-based EF select isn't supported by the card. The reader uses SFI-based access first and only falls back to FID, so this should not occur on standard eGKs.
 
@@ -459,3 +679,7 @@ XML parse error mentioning `ISO-8859-15` → the charset decoder didn't kick in;
 `ktda.json not found … fetching insurer table` → first-run auto-fetch. Subsequent runs use the cached file.
 
 `warning: KTDA files are from Q… — run \`card-reader ktda update\`` → printed when the cached `ktda.json` is from a prior calendar quarter. Non-blocking; run `ktda update` to silence and pick up the new quarter's data.
+
+`REFUSED INS=0x20 — VERIFY …` → the safety guard blocked an APDU that would decrement the card's PIN retry counter. Intentional; pass `-UNSAFE-allow-pin-write` (CLI) or `Options.AllowPINWrite=true` (library) only when you really mean it. See [docs/c2c/pin-workflow.md](docs/c2c/pin-workflow.md).
+
+`c2c: present-to-verifier: …: SW=6300 authentication failed` → expected when running phase 3 with a CV-cert chain that doesn't match the eGK's on-card production CVC-Root. This is Wall 2 of the four-walls model — the test SMC-B's chain is wrong/expired/missing. See [docs/c2c/walls.md](docs/c2c/walls.md).
