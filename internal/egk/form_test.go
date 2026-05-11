@@ -70,8 +70,8 @@ func TestFormMappingFullCard(t *testing.T) {
 		KostentraegerGruppe: "06",
 	}
 	fields := FormMapping(d, ik)
-	if len(fields) != 21 {
-		t.Fatalf("expected 21 fields, got %d", len(fields))
+	if len(fields) != 23 {
+		t.Fatalf("expected 23 fields, got %d", len(fields))
 	}
 
 	checks := map[string]string{
@@ -251,10 +251,10 @@ func TestFormMappingIKInfoPresentNoKTG(t *testing.T) {
 }
 
 func TestFormMappingNilCardData(t *testing.T) {
-	// Empty CardData should still produce 21 fields with default codes.
+	// Empty CardData should still produce 23 fields with default codes.
 	fields := FormMapping(&CardData{}, nil)
-	if len(fields) != 21 {
-		t.Errorf("expected 21 fields from empty CardData, got %d", len(fields))
+	if len(fields) != 23 {
+		t.Errorf("expected 23 fields from empty CardData, got %d", len(fields))
 	}
 	bp, _ := fieldByLabel(fields, "Besondere Personengruppe")
 	if bp.Value != "00" {
@@ -290,6 +290,67 @@ func TestFormMappingPrintedNameOnlyLast(t *testing.T) {
 	bn, _ := fieldByLabel(fields, "Bedruckungsname")
 	if bn.Value != "Müller" {
 		t.Errorf("Bedruckungsname = %q", bn.Value)
+	}
+}
+
+func TestFormMappingSelektivContracts(t *testing.T) {
+	mk := func(aer, zahn string) *CardData {
+		return &CardData{
+			Insurance: &InsuranceData{InsurerID: "1"},
+			Protected: &ProtectedData{
+				SelektivAerztlich:     aer,
+				SelektivZahnaerztlich: zahn,
+			},
+		}
+	}
+	// Both participate (1/1).
+	f := FormMapping(mk("1", "1"), nil)
+	a, _ := fieldByLabel(f, "Selektivvertrag (ärztlich)")
+	if a.Value != "1" {
+		t.Errorf("ärztlich value = %q", a.Value)
+	}
+	if !strings.Contains(a.Note, "Teilnahme") {
+		t.Errorf("ärztlich note = %q", a.Note)
+	}
+	z, _ := fieldByLabel(f, "Selektivvertrag (zahnärztlich)")
+	if z.Value != "1" {
+		t.Errorf("zahnärztlich value = %q", z.Value)
+	}
+	// Neither (0/0).
+	f = FormMapping(mk("0", "0"), nil)
+	a, _ = fieldByLabel(f, "Selektivvertrag (ärztlich)")
+	if !strings.Contains(a.Note, "keine Teilnahme") {
+		t.Errorf("0 note = %q", a.Note)
+	}
+	// Absent on card.
+	f = FormMapping(mk("", ""), nil)
+	a, _ = fieldByLabel(f, "Selektivvertrag (ärztlich)")
+	if a.Value != "" {
+		t.Errorf("absent value = %q", a.Value)
+	}
+	if !strings.Contains(a.Note, "not present") {
+		t.Errorf("absent note = %q", a.Note)
+	}
+}
+
+func TestExplainSelektiv(t *testing.T) {
+	cases := []struct{ in, wantSub string }{
+		{"", "not present"},
+		{"0", "keine Teilnahme"},
+		{"1", "Teilnahme"},
+		{"9", ""},
+	}
+	for _, c := range cases {
+		got := explainSelektiv(c.in)
+		if c.wantSub == "" {
+			if got != "" {
+				t.Errorf("explainSelektiv(%q) = %q, want empty", c.in, got)
+			}
+			continue
+		}
+		if !strings.Contains(got, c.wantSub) {
+			t.Errorf("explainSelektiv(%q) = %q, want substring %q", c.in, got, c.wantSub)
+		}
 	}
 }
 

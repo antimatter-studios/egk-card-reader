@@ -421,8 +421,8 @@ func TestFormMappingJSONEncode(t *testing.T) {
 	if err := json.Unmarshal(doc.Bytes, &rows); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if len(rows) != 21 {
-		t.Errorf("expected 21 rows, got %d", len(rows))
+	if len(rows) != 23 {
+		t.Errorf("expected 23 rows, got %d", len(rows))
 	}
 	for _, r := range rows {
 		for _, k := range []string{"label", "value", "source", "note"} {

@@ -130,7 +130,25 @@ func FormMapping(d *CardData, ikInfo *IKInfo) []FormField {
 		{Label: "Versicherungsschutz Ende", Value: FormatDate(vd.EndDate), Source: "EF.AVD"},
 		{Label: "gebührenbefreit bis Datum", Value: copayUntil, Source: "EF.GVD",
 			Note: copayNote(gv.ZuzahlungStatus, gv.ZuzahlungGueltigBis)},
+		{Label: "Selektivvertrag (ärztlich)", Value: gv.SelektivAerztlich, Source: "EF.GVD",
+			Note: explainSelektiv(gv.SelektivAerztlich)},
+		{Label: "Selektivvertrag (zahnärztlich)", Value: gv.SelektivZahnaerztlich, Source: "EF.GVD",
+			Note: explainSelektiv(gv.SelektivZahnaerztlich)},
 	}
+}
+
+// explainSelektiv decodes the Aerztlich/Zahnaerztlich code per gemSpec_eGK_Fach:
+// "0" = no participation, "1" = participates in at least one selective contract.
+func explainSelektiv(s string) string {
+	switch s {
+	case "":
+		return "not present on card"
+	case "0":
+		return "0 = keine Teilnahme an Selektivverträgen"
+	case "1":
+		return "1 = Teilnahme an mind. einem Selektivvertrag"
+	}
+	return ""
 }
 
 func explainInsuredType(s string) string {
