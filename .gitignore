@@ -1,5 +1,6 @@
-# Compiled binary
+# Compiled binaries
 /card-reader
+/orga-probe
 
 # Screenshot — contains personal insurance data, do not commit
 /gkv-card-reader.png
@@ -14,3 +15,4 @@
 # Card-reader output files — keep the directory, ignore its contents
 /output/*
 !/output/.gitkeep
+internal/reader/usb/testdata/ioreg_with_orga.txt
