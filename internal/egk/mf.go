@@ -27,20 +27,13 @@ type Version struct {
 	TagC3 string
 }
 
-// EF.GDO at MF holds the Integrated Circuit Card Serial Number as a BER-TLV:
-// tag 0x5A, length 0x0A, value = 10 bytes. Per ISO 7816-4 / gemSpec_eGK_ObjSys.
-const efGDO = 0x2F02 // FID at MF — collides with EF.VD inside DF.HCA, so order matters.
-
-// EF.Version2 candidate FIDs at MF, in priority order.
-//   - 0xD080: gemSpec_eGK_ObjSys §3.4.7 canonical location.
-//   - 0x2F11: legacy / pre-G2.x cards.
-var efVersion2FIDs = []uint16{0xD080, 0x2F11}
-
 // readMF reads the EF.GDO at MF and returns the ICCSN + raw bytes.
 // Returns (nil, nil) if the card has no GDO or it can't be read — callers
 // treat this as "diagnostic info unavailable" rather than a fatal error.
+// EF.GDO is a BER-TLV: tag 0x5A, length 0x0A, value = 10-byte ICCSN
+// per ISO 7816-4 / gemSpec_eGK_ObjSys.
 func readMF(card Card) (*MFData, error) {
-	if err := selectEF(card, efGDO); err != nil {
+	if err := selectEF(card, fidGDO); err != nil {
 		return nil, err
 	}
 	// EF.GDO is at most 18 bytes (TLV 5A 0A + 10 + a few wrapper bytes); 32 is plenty.
@@ -76,23 +69,24 @@ func readVersion2(card Card) (*Version, error) {
 }
 
 // parseVersion2 decodes the EF.Version2 BER-TLV structure. Layout per
-// gemSpec_eGK_ObjSys §3.4.7: outer constructed tag 0xEF, four primitive
-// children 0xC0..0xC3 each holding 3 BCD bytes. Unknown layouts return a
-// Version with empty fields but the raw bytes preserved.
+// gemSpec_eGK_ObjSys §3.4.7: outer constructed tag tagVersion2Outer, four
+// primitive children tagVersion2ObjSys/Prod/Pers/COS each holding a small
+// version block. Unknown layouts return a Version with empty fields but the
+// raw bytes preserved.
 func parseVersion2(b []byte) *Version {
 	v := &Version{}
-	// Skip the outer tag/length if present (0xEF <len>).
+	// Skip the outer tag/length if present.
 	i := 0
-	if len(b) >= 2 && b[0] == 0xEF {
+	if len(b) >= 2 && b[0] == tagVersion2Outer {
 		// length form: short (1 byte) or long (81/82 + len). For Version2,
 		// payload is <= 16 bytes so short form is universal — but be defensive.
-		l := int(b[1])
+		l := b[1]
 		switch {
-		case l < 0x80:
+		case l < berLenLongMarker:
 			i = 2
-		case l == 0x81 && len(b) >= 3:
+		case l == berLen1 && len(b) >= 3:
 			i = 3
-		case l == 0x82 && len(b) >= 4:
+		case l == berLen2 && len(b) >= 4:
 			i = 4
 		}
 	}
@@ -104,19 +98,19 @@ func parseVersion2(b []byte) *Version {
 		}
 		val := b[i+2 : i+2+l]
 		s := hexDotted(val)
-		// Long mixed-ASCII fields (C2 Personalisation block) read nicer with
+		// Long mixed-ASCII fields (Personalisation block) read nicer with
 		// the manufacturer prefix surfaced.
 		if a := asciiPart(val); a != "" && len(a) >= 4 {
 			s = a + " (" + s + ")"
 		}
 		switch tag {
-		case 0xC0:
+		case tagVersion2ObjSys:
 			v.TagC0 = s
-		case 0xC1:
+		case tagVersion2Prod:
 			v.TagC1 = s
-		case 0xC2:
+		case tagVersion2Pers:
 			v.TagC2 = s
-		case 0xC3:
+		case tagVersion2COS:
 			v.TagC3 = s
 		}
 		i += 2 + l
@@ -143,9 +137,11 @@ func hexDotted(b []byte) string {
 // non-printable byte), empty if none. Used to surface the manufacturer text
 // embedded in EF.Version2 tag C2.
 func asciiPart(b []byte) string {
+	const asciiPrintableLow = 0x20
+	const asciiPrintableHigh = 0x7F
 	out := make([]byte, 0, len(b))
 	for _, c := range b {
-		if c < 0x20 || c >= 0x7F {
+		if c < asciiPrintableLow || c >= asciiPrintableHigh {
 			break
 		}
 		out = append(out, c)
@@ -154,16 +150,17 @@ func asciiPart(b []byte) string {
 }
 
 // parseICCSN extracts the 20-hex ICCSN from EF.GDO content. Accepts both the
-// canonical TLV form (5A 0A <10 bytes>) and the bare 10-byte form some test
-// cards return.
+// canonical TLV form (tag tagICCSN, length 0x0A, value 10 bytes) and the bare
+// 10-byte form some test cards return.
 func parseICCSN(b []byte) string {
-	if len(b) >= 12 && b[0] == 0x5A {
+	const iccsnLen = 10
+	if len(b) >= 2+iccsnLen && b[0] == tagICCSN {
 		n := int(b[1])
-		if n == 10 && len(b) >= 2+n {
+		if n == iccsnLen && len(b) >= 2+n {
 			return strings.ToUpper(hex.EncodeToString(b[2 : 2+n]))
 		}
 	}
-	if len(b) == 10 {
+	if len(b) == iccsnLen {
 		return strings.ToUpper(hex.EncodeToString(b))
 	}
 	return ""

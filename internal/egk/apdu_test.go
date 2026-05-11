@@ -10,6 +10,36 @@ import (
 	"testing"
 )
 
+// isSelectEFFID reports whether apdu is a SELECT EF (by FID) for the given fid.
+// Used in test stubs so the switch-case reads "is this a SELECT EF.GDO?"
+// instead of comparing apdu byte indices to hex literals.
+func isSelectEFFID(apdu []byte, fid uint16) bool {
+	return len(apdu) >= 7 &&
+		apdu[0] == claISO &&
+		apdu[1] == insSelect &&
+		apdu[2] == p1SelectEF &&
+		apdu[3] == p2NoFCI &&
+		apdu[4] == 0x02 &&
+		apdu[5] == byte(fid>>8) &&
+		apdu[6] == byte(fid&0xFF)
+}
+
+// isSelectMF reports whether apdu is a SELECT MF (FID 3F00) command.
+func isSelectMF(apdu []byte) bool {
+	return len(apdu) >= 7 &&
+		apdu[0] == claISO &&
+		apdu[1] == insSelect &&
+		apdu[2] == p1SelectMF &&
+		apdu[3] == p2NoFCI &&
+		apdu[5] == byte(fidMF>>8) &&
+		apdu[6] == byte(fidMF&0xFF)
+}
+
+// isSelectAID reports whether apdu is a SELECT (by AID) command.
+func isSelectAID(apdu []byte) bool {
+	return len(apdu) >= 2 && apdu[0] == claISO && apdu[1] == insSelect && apdu[2] == p1SelectAID
+}
+
 // fakeCard is a deterministic Card implementation: it walks through a scripted
 // list of (request, response) pairs. Each Transmit consumes one script entry,
 // verifies the request matches, and returns the canned response.
@@ -385,7 +415,7 @@ func TestReadEFBySFI_PD(t *testing.T) {
 		return nil, nil
 	})
 
-	got, err := readEFBySFI(stub, sfiPD, efPD)
+	got, err := readEFBySFI(stub, sfiPD, fidPD)
 	if err != nil {
 		t.Fatalf("readEFBySFI: %v", err)
 	}
@@ -421,7 +451,7 @@ func TestReadEFBySFI_VD(t *testing.T) {
 		return append(append([]byte{}, full[start:end]...), 0x90, 0x00), nil
 	})
 
-	got, err := readEFBySFI(stub, sfiVD, efVD)
+	got, err := readEFBySFI(stub, sfiVD, fidVD)
 	if err != nil {
 		t.Fatalf("readEFBySFI VD: %v", err)
 	}
@@ -435,14 +465,14 @@ func TestReadEFBySFIHeaderTooShort(t *testing.T) {
 	stub := stubCard(func(_ []byte) ([]byte, error) {
 		return []byte{0x90, 0x00}, nil // 0 bytes data + SW
 	})
-	if _, err := readEFBySFI(stub, sfiPD, efPD); err == nil {
+	if _, err := readEFBySFI(stub, sfiPD, fidPD); err == nil {
 		t.Error("expected header-too-short error")
 	}
 }
 
 func TestReadEFBySFIInitialReadError(t *testing.T) {
 	stub := stubCard(func(_ []byte) ([]byte, error) { return nil, fmt.Errorf("io") })
-	if _, err := readEFBySFI(stub, sfiPD, efPD); err == nil {
+	if _, err := readEFBySFI(stub, sfiPD, fidPD); err == nil {
 		t.Error("expected error")
 	}
 }
@@ -459,7 +489,7 @@ func TestReadEFCombinedSFISuccess(t *testing.T) {
 	stub := stubCard(func(_ []byte) ([]byte, error) {
 		return append(append([]byte{}, full...), 0x90, 0x00), nil
 	})
-	got, err := readEFCombined(stub, sfiPD, efPD)
+	got, err := readEFCombined(stub, sfiPD, fidPD)
 	if err != nil {
 		t.Fatalf("readEFCombined: %v", err)
 	}
@@ -493,7 +523,7 @@ func TestReadEFCombinedFallback(t *testing.T) {
 			return []byte{0x90, 0x00}, nil
 		}
 	})
-	got, err := readEFCombined(stub, sfiPD, efPD)
+	got, err := readEFCombined(stub, sfiPD, fidPD)
 	if err != nil {
 		t.Fatalf("readEFCombined fallback: %v", err)
 	}
@@ -511,7 +541,7 @@ func TestReadEFCombinedFallbackSelectFails(t *testing.T) {
 		}
 		return []byte{0x6A, 0x82}, nil // SELECT EF fails
 	})
-	if _, err := readEFCombined(stub, sfiPD, efPD); err == nil {
+	if _, err := readEFCombined(stub, sfiPD, fidPD); err == nil {
 		t.Error("expected fallback failure")
 	}
 }
@@ -535,30 +565,29 @@ func TestReadEndToEnd(t *testing.T) {
 
 	stub := stubCard(func(apdu []byte) ([]byte, error) {
 		switch {
-		case apdu[1] == 0xA4 && apdu[3] == 0x0C && len(apdu) >= 7 && apdu[5] == 0x3F && apdu[6] == 0x00:
+		case isSelectMF(apdu):
 			return []byte{0x90, 0x00}, nil
-		case apdu[1] == 0xA4 && apdu[2] == 0x02 && apdu[3] == 0x0C && len(apdu) >= 7 && apdu[5] == 0x2F && apdu[6] == 0x02:
-			// SELECT EF.GDO at MF (FID 2F02 before HCA is selected).
+		case isSelectEFFID(apdu, fidGDO):
+			// SELECT EF.GDO at MF — happens before HCA is selected.
 			currentSrc = gdo
 			return []byte{0x90, 0x00}, nil
-		case apdu[1] == 0xA4 && apdu[2] == 0x02 && apdu[3] == 0x0C && len(apdu) >= 7 &&
-			((apdu[5] == 0xD0 && apdu[6] == 0x80) || (apdu[5] == 0x2F && apdu[6] == 0x11)):
-			// SELECT EF.Version2 candidates — report "not present" so readVersion2
-			// returns nil cleanly. (Real-card behaviour is exercised in
-			// TestReadVersion2_*.)
+		case isSelectEFFID(apdu, fidVersion2A), isSelectEFFID(apdu, fidVersion2B):
+			// SELECT EF.Version2 candidates — report "not present" so
+			// readVersion2 returns nil cleanly. (Real-card behaviour is
+			// exercised in TestReadVersion2_*.)
 			return []byte{0x6A, 0x82}, nil
-		case apdu[1] == 0xA4 && apdu[2] == 0x02 && apdu[3] == 0x0C && len(apdu) >= 7 && apdu[5] == 0xD0 && apdu[6] == 0x0C:
+		case isSelectEFFID(apdu, fidStatusVD):
 			// SELECT EF.StatusVD — report "not present" in this end-to-end test;
 			// dedicated TestReadStatusVD_* covers the happy path.
 			return []byte{0x6A, 0x82}, nil
-		case apdu[1] == 0xA4 && apdu[2] == 0x04:
+		case isSelectAID(apdu):
 			return append(append([]byte{}, fcp...), 0x90, 0x00), nil
-		case apdu[1] == 0xB0:
+		case apdu[1] == insReadBinary:
 			le := int(apdu[4])
 			var offset int
-			if apdu[2]&0x80 != 0 {
+			if apdu[2]&readBinarySFIBit != 0 {
 				// SFI mode — also remember which file is implicitly selected.
-				sfi := apdu[2] & 0x1F
+				sfi := apdu[2] & readBinarySFIMask
 				switch sfi {
 				case sfiPD:
 					currentSrc = pd

@@ -22,19 +22,17 @@ type StatusVD struct {
 	StatusHex string // hex dump of the trailing status block (bytes 16+)
 }
 
-const efStatusVD = 0x00D00C & 0xFFFF // FID inside DF.HCA per probe; gemSpec_eGK_ObjSys §3.4.x
-
 // readStatusVD selects EF.StatusVD and reads up to 32 bytes. Returns nil if
 // the file isn't present (best-effort; not all cards expose it).
 func readStatusVD(card Card) (*StatusVD, error) {
-	if err := selectEF(card, 0xD00C); err != nil {
+	if err := selectEF(card, fidStatusVD); err != nil {
 		return nil, err
 	}
 	raw, err := readBinary(card, 0, 0, 32)
 	if err != nil {
 		return nil, err
 	}
-	return parseStatusVD(raw, 0xD00C), nil
+	return parseStatusVD(raw, fidStatusVD), nil
 }
 
 func parseStatusVD(raw []byte, fid uint16) *StatusVD {

@@ -62,7 +62,7 @@ func Read(card Card) (*CardData, error) {
 		fmt.Fprintf(os.Stderr, "[apdu] EF.StatusVD read skipped: %v\n", statusErr)
 	}
 
-	rawPD, err := readEFCombined(card, sfiPD, efPD)
+	rawPD, err := readEFCombined(card, sfiPD, fidPD)
 	if err != nil {
 		return nil, fmt.Errorf("read EF.PD: %w", err)
 	}
@@ -71,7 +71,7 @@ func Read(card Card) (*CardData, error) {
 		return nil, fmt.Errorf("parse EF.PD: %w", err)
 	}
 
-	rawVD, err := readEFCombined(card, sfiVD, efVD)
+	rawVD, err := readEFCombined(card, sfiVD, fidVD)
 	if err != nil {
 		return nil, fmt.Errorf("read EF.VD: %w", err)
 	}
@@ -114,7 +114,7 @@ func readEFCombined(card Card, sfi byte, fid uint16) ([]byte, error) {
 	out := make([]byte, 0, 4096)
 	out = append(out, header...)
 	for {
-		buf, err := readBinary(card, 0, uint16(len(out)), 0xFC)
+		buf, err := readBinary(card, 0, uint16(len(out)), readChunkSize)
 		if err != nil {
 			return nil, err
 		}
