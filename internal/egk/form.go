@@ -143,7 +143,7 @@ func FormMapping(d *CardData, ikInfo *IKInfo) []FormField {
 // for debugging / support, not for clinical or billing output.
 func DiagnosticFields(d *CardData) []FormField {
 	var fields []FormField
-	if d == nil || d.MF == nil {
+	if d == nil {
 		return []FormField{{
 			Label:  "ICCSN",
 			Value:  "",
@@ -151,13 +151,43 @@ func DiagnosticFields(d *CardData) []FormField {
 			Note:   "Card serial not read (selectMF/EF.GDO failed or skipped).",
 		}}
 	}
-	fields = append(fields, FormField{
-		Label:  "ICCSN",
-		Value:  d.MF.ICCSN,
-		Source: "MF.EF.GDO",
-		Note:   "Integrated Circuit Card Serial Number — uniquely identifies the physical chip.",
-	})
-	if v := d.MF.Version2; v != nil {
+	if d.MF != nil {
+		fields = append(fields, FormField{
+			Label:  "ICCSN",
+			Value:  d.MF.ICCSN,
+			Source: "MF.EF.GDO",
+			Note:   "Integrated Circuit Card Serial Number — uniquely identifies the physical chip.",
+		})
+	} else {
+		fields = append(fields, FormField{
+			Label:  "ICCSN",
+			Value:  "",
+			Source: "MF.EF.GDO",
+			Note:   "Card serial not read (selectMF/EF.GDO failed or skipped).",
+		})
+	}
+	if s := d.StatusVD; s != nil {
+		ts := s.Timestamp
+		if ts == "" {
+			ts = "(unparsed)"
+		}
+		fields = append(fields, FormField{
+			Label:  "VD letzte Aktualisierung",
+			Value:  ts,
+			Source: "DF.HCA.EF.StatusVD",
+			Note:   "Timestamp at which the insurer last refreshed EF.VD on this card.",
+		})
+		if s.StatusHex != "" {
+			fields = append(fields, FormField{
+				Label:  "VD-Status (raw)",
+				Value:  s.StatusHex,
+				Source: "DF.HCA.EF.StatusVD",
+				Note:   "Trailing status bytes; layout per gemSpec_eGK_ObjSys.",
+			})
+		}
+	}
+	if d.MF != nil && d.MF.Version2 != nil {
+		v := d.MF.Version2
 		fields = append(fields,
 			FormField{Label: "Version2 / C0", Value: v.TagC0, Source: "MF.EF.Version2",
 				Note: "First version block — gemSpec_eGK_ObjSys / Objektsystem on most cards."},

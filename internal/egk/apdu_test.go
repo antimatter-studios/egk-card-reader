@@ -547,6 +547,10 @@ func TestReadEndToEnd(t *testing.T) {
 			// returns nil cleanly. (Real-card behaviour is exercised in
 			// TestReadVersion2_*.)
 			return []byte{0x6A, 0x82}, nil
+		case apdu[1] == 0xA4 && apdu[2] == 0x02 && apdu[3] == 0x0C && len(apdu) >= 7 && apdu[5] == 0xD0 && apdu[6] == 0x0C:
+			// SELECT EF.StatusVD — report "not present" in this end-to-end test;
+			// dedicated TestReadStatusVD_* covers the happy path.
+			return []byte{0x6A, 0x82}, nil
 		case apdu[1] == 0xA4 && apdu[2] == 0x04:
 			return append(append([]byte{}, fcp...), 0x90, 0x00), nil
 		case apdu[1] == 0xB0:

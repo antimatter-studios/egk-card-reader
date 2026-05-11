@@ -7,10 +7,11 @@ import (
 
 // CardData bundles everything we extract from the eGK in one read session.
 type CardData struct {
-	MF        *MFData // MF-level diagnostics (ICCSN, etc.); nil if unreadable
+	MF        *MFData   // MF-level diagnostics (ICCSN, etc.); nil if unreadable
 	Personal  *PersonalData
 	Insurance *InsuranceData
 	Protected *ProtectedData
+	StatusVD  *StatusVD // freshness/state of EF.VD (nil if unreadable)
 	RawPD     []byte
 	RawVD     []byte
 	XMLPD     string // decompressed PD XML
@@ -55,6 +56,11 @@ func Read(card Card) (*CardData, error) {
 	if err != nil {
 		return nil, fmt.Errorf("select HCA: %w", err)
 	}
+	ProbeDFHCA(card)
+	status, statusErr := readStatusVD(card)
+	if statusErr != nil && os.Getenv("EGK_TRACE") == "1" {
+		fmt.Fprintf(os.Stderr, "[apdu] EF.StatusVD read skipped: %v\n", statusErr)
+	}
 
 	rawPD, err := readEFCombined(card, sfiPD, efPD)
 	if err != nil {
@@ -79,6 +85,7 @@ func Read(card Card) (*CardData, error) {
 		Personal:  pd,
 		Insurance: vd,
 		Protected: gvd,
+		StatusVD:  status,
 		RawPD:     rawPD,
 		RawVD:     rawVD,
 		XMLPD:     pdXML,
