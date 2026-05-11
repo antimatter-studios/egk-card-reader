@@ -1,0 +1,36 @@
+name: test
+
+# Runs on every PR and every push to main. Tests are platform-independent
+# (all PC/SC and ORGA serial I/O is mocked via the interfaces in
+# internal/egk/card.go and the unexported pcsc/probe contexts), so we only
+# need to run them on one OS. Linux is cheapest and fastest on GitHub
+# Actions.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: go test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install PC/SC dev headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcsclite-dev
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race -timeout 5m ./...

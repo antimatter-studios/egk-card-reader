@@ -1,0 +1,172 @@
+name: release
+
+# Triggers on semver tag push (e.g. v1.0.0, v1.2.3-rc1). The build matrix uses
+# *native* runners per target — no cross-compilation — because the
+# github.com/ebfe/scard cgo binding links per-platform PC/SC libraries and
+# the ORGA serial backend has per-OS implementations. Native runners trade
+# minor CI cost for simplicity and reproducibility.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: write  # softprops/action-gh-release needs this to publish
+
+jobs:
+  # Run the full test suite once before touching any artifact. If tests fail
+  # the tag's release is blocked.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
+      - run: go test -race -timeout 5m ./...
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            runs-on: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            ext: ""
+            archive: tar
+          - name: linux-arm64
+            runs-on: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            ext: ""
+            archive: tar
+          - name: darwin-amd64
+            runs-on: macos-13
+            goos: darwin
+            goarch: amd64
+            ext: ""
+            archive: tar
+          - name: darwin-arm64
+            runs-on: macos-latest
+            goos: darwin
+            goarch: arm64
+            ext: ""
+            archive: tar
+          - name: windows-amd64
+            runs-on: windows-latest
+            goos: windows
+            goarch: amd64
+            ext: ".exe"
+            archive: zip
+
+    runs-on: ${{ matrix.runs-on }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # PC/SC dev headers — Linux only. macOS has PCSC.framework built-in;
+      # Windows has winscard.dll built-in.
+      - name: Install PC/SC dev headers (linux)
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcsclite-dev
+
+      # We build card-reader (main CLI) and card-probe (PC/SC diagnostic).
+      # The orga-probe binary in the working tree is not committed and is not
+      # part of the release artifacts.
+      - name: Build (unix)
+        if: matrix.goos != 'windows'
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: |
+          mkdir -p dist/${{ matrix.name }}
+          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.name }}/card-reader ./cmd/card-reader
+          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.name }}/card-probe ./cmd/card-probe
+
+      - name: Build (windows)
+        if: matrix.goos == 'windows'
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        shell: bash
+        run: |
+          mkdir -p dist/${{ matrix.name }}
+          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.name }}/card-reader.exe ./cmd/card-reader
+          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.name }}/card-probe.exe ./cmd/card-probe
+
+      - name: Copy LICENSE/README into archive dir
+        shell: bash
+        run: |
+          if [ -f LICENSE ]; then cp LICENSE dist/${{ matrix.name }}/; fi
+          if [ -f README.md ]; then cp README.md dist/${{ matrix.name }}/; fi
+
+      - name: Archive (tar.gz)
+        if: matrix.archive == 'tar'
+        shell: bash
+        run: |
+          cd dist
+          tar czf card-reader-${{ matrix.name }}.tar.gz ${{ matrix.name }}
+
+      - name: Archive (zip)
+        if: matrix.archive == 'zip'
+        shell: bash
+        run: |
+          cd dist
+          # PowerShell-free portable zip for the matrix-shared bash shell.
+          # 7z is preinstalled on windows-latest.
+          7z a card-reader-${{ matrix.name }}.zip ${{ matrix.name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: card-reader-${{ matrix.name }}
+          path: |
+            dist/card-reader-${{ matrix.name }}.tar.gz
+            dist/card-reader-${{ matrix.name }}.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4  # needed for generate_release_notes
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la dist/
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/card-reader-*.tar.gz
+            dist/card-reader-*.zip
+            dist/SHA256SUMS
+          generate_release_notes: true
+          fail_on_unmatched_files: true
