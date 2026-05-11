@@ -3,8 +3,6 @@ package egk
 import (
 	"fmt"
 	"os"
-
-	"github.com/ebfe/scard"
 )
 
 // CardData bundles everything we extract from the eGK in one read session.
@@ -25,7 +23,7 @@ type CardData struct {
 // Read strategy: SELECT DF.HCA by AID (with FCP), then READ BINARY by SFI to
 // avoid relying on FID-based SELECT EF (which fails on some implementations).
 // If SFI fails, fall back to SELECT EF by FID.
-func Read(card *scard.Card) (*CardData, error) {
+func Read(card Card) (*CardData, error) {
 	// Some cards land in an unexpected DF on power-up; explicitly walk MF first.
 	if err := selectMF(card); err != nil {
 		// Non-fatal — many eGK cards don't support explicit MF select,
@@ -72,7 +70,7 @@ func Read(card *scard.Card) (*CardData, error) {
 }
 
 // readEFCombined tries SFI access first, falls back to FID-based SELECT EF.
-func readEFCombined(card *scard.Card, sfi byte, fid uint16) ([]byte, error) {
+func readEFCombined(card Card, sfi byte, fid uint16) ([]byte, error) {
 	data, sfiErr := readEFBySFI(card, sfi, fid)
 	if sfiErr == nil {
 		return data, nil

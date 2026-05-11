@@ -9,6 +9,20 @@ import (
 	"github.com/ebfe/scard"
 )
 
+// probeContext is the subset of *scard.Context this binary uses against the
+// reader; *scard.Context satisfies it structurally.
+type probeContext interface {
+	Connect(reader string, share scard.ShareMode, proto scard.Protocol) (*scard.Card, error)
+}
+
+// probeCard is the subset of *scard.Card used inside probeReader/transmit.
+// *scard.Card satisfies it structurally.
+type probeCard interface {
+	Transmit([]byte) ([]byte, error)
+	Status() (*scard.CardStatus, error)
+	Disconnect(scard.Disposition) error
+}
+
 // Known gematik / German healthcare AIDs.
 type aidEntry struct {
 	name string
@@ -57,7 +71,7 @@ func main() {
 	}
 }
 
-func probeReader(ctx *scard.Context, reader string) {
+func probeReader(ctx probeContext, reader string) {
 	card, err := ctx.Connect(reader, scard.ShareShared, scard.ProtocolAny)
 	if err != nil {
 		fmt.Printf("  Connect failed: %v (no card present?)\n", err)
@@ -130,7 +144,7 @@ func probeReader(ctx *scard.Context, reader string) {
 	}
 }
 
-func transmit(card *scard.Card, apdu []byte) (uint16, []byte) {
+func transmit(card probeCard, apdu []byte) (uint16, []byte) {
 	resp, err := card.Transmit(apdu)
 	if err != nil || len(resp) < 2 {
 		return 0, nil

@@ -14,6 +14,14 @@ import (
 	"github.com/christhomas/card-reader/internal/egk"
 )
 
+// pcscContext is the subset of *scard.Context that this package needs.
+// Defining it lets tests stub PC/SC interactions; *scard.Context satisfies
+// it structurally.
+type pcscContext interface {
+	GetStatusChange([]scard.ReaderState, time.Duration) error
+	Connect(reader string, share scard.ShareMode, proto scard.Protocol) (*scard.Card, error)
+}
+
 // setupCardReader establishes the PC/SC context and lists readers. The caller
 // must call ctx.Release() when done. Only invoked for --input cardreader (and
 // --debug); file-based input never touches PC/SC.
@@ -96,7 +104,7 @@ func loadCardData(input string) (*egk.CardData, func(), error) {
 }
 
 // waitForCard does single-flight polling — never overlaps PC/SC calls.
-func waitForCard(ctx *scard.Context, readers []string, timeout time.Duration) (string, error) {
+func waitForCard(ctx pcscContext, readers []string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		states := make([]scard.ReaderState, len(readers))
@@ -127,7 +135,7 @@ func suggestBaseName(data *egk.CardData) string {
 	return id + "-" + time.Now().Format("20060102-150405")
 }
 
-func runDebug(ctx *scard.Context, readers []string) error {
+func runDebug(ctx pcscContext, readers []string) error {
 	fmt.Println("Readers:")
 	for _, r := range readers {
 		fmt.Printf("  - %s\n", r)

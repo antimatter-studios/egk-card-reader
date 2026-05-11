@@ -4,8 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
-
-	"github.com/ebfe/scard"
 )
 
 // AID for the Health Card Application (DF.HCA) on the German eGK.
@@ -35,7 +33,7 @@ func trace(format string, args ...any) {
 }
 
 // transmit sends an APDU and returns the response data plus SW1SW2.
-func transmit(card *scard.Card, apdu []byte) ([]byte, uint16, error) {
+func transmit(card Card, apdu []byte) ([]byte, uint16, error) {
 	trace(">> %X", apdu)
 	rsp, err := card.Transmit(apdu)
 	if err != nil {
@@ -51,7 +49,7 @@ func transmit(card *scard.Card, apdu []byte) ([]byte, uint16, error) {
 }
 
 // selectMF selects the Master File (root). Useful to reset before re-selecting.
-func selectMF(card *scard.Card) error {
+func selectMF(card Card) error {
 	// 00 A4 00 0C 02 3F 00 — select by FID, no FCI
 	apdu := []byte{0x00, 0xA4, 0x00, 0x0C, 0x02, 0x3F, 0x00}
 	_, sw, err := transmit(card, apdu)
@@ -73,7 +71,7 @@ func selectMF(card *scard.Card) error {
 
 // selectByAID selects an application by its AID. Uses P2=0x04 (return FCP) on
 // retry to surface FCI data so callers can verify which DF was selected.
-func selectByAID(card *scard.Card, aid []byte) ([]byte, error) {
+func selectByAID(card Card, aid []byte) ([]byte, error) {
 	// Try with FCP first — gives us back a TLV with the selected DF's metadata.
 	apdu := append([]byte{0x00, 0xA4, 0x04, 0x04, byte(len(aid))}, aid...)
 	apdu = append(apdu, 0x00) // Le=0 → return up to 256 bytes of FCP
@@ -105,7 +103,7 @@ func selectByAID(card *scard.Card, aid []byte) ([]byte, error) {
 }
 
 // selectEF selects an Elementary File by its 2-byte file ID.
-func selectEF(card *scard.Card, fid uint16) error {
+func selectEF(card Card, fid uint16) error {
 	apdu := []byte{0x00, 0xA4, 0x02, 0x0C, 0x02, byte(fid >> 8), byte(fid & 0xFF)}
 	_, sw, err := transmit(card, apdu)
 	if err != nil {
@@ -121,7 +119,7 @@ func selectEF(card *scard.Card, fid uint16) error {
 // selected EF (sfi=0), or — when sfi != 0 — within the EF designated by SFI.
 // Per ISO 7816-4, READ BINARY with P1.b8=1 uses P1.b5..b1 as SFI and P2 as a
 // 1-byte offset (0..255), so for SFI mode the offset is limited to a byte.
-func readBinary(card *scard.Card, sfi byte, offset, length uint16) ([]byte, error) {
+func readBinary(card Card, sfi byte, offset, length uint16) ([]byte, error) {
 	var p1, p2 byte
 	if sfi != 0 {
 		if offset > 0xFF {
@@ -158,7 +156,7 @@ func readBinary(card *scard.Card, sfi byte, offset, length uint16) ([]byte, erro
 // SFI access has a 1-byte (255) offset cap, so once the read position passes
 // 255 we have to switch to FID-based addressing — fall back to selectEF then
 // keep reading.
-func readEFBySFI(card *scard.Card, sfi byte, fid uint16) ([]byte, error) {
+func readEFBySFI(card Card, sfi byte, fid uint16) ([]byte, error) {
 	header, err := readBinary(card, sfi, 0, 8)
 	if err != nil {
 		return nil, err

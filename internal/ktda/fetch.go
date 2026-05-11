@@ -16,9 +16,11 @@ import (
 //
 // We scrape it because the filenames carry the quarter and year and change
 // every three months — hardcoding them rots fast.
-const IndexURL = "https://www.gkv-datenaustausch.de/leistungserbringer/sonstige_leistungserbringer/kostentraegerdateien_sle/kostentraegerdateien.jsp"
+//
+// Declared as var (not const) so unit tests can point it at an httptest server.
+var IndexURL = "https://www.gkv-datenaustausch.de/leistungserbringer/sonstige_leistungserbringer/kostentraegerdateien_sle/kostentraegerdateien.jsp"
 
-const baseHost = "https://www.gkv-datenaustausch.de"
+var baseHost = "https://www.gkv-datenaustausch.de"
 
 // kassenartRe matches the .ke0 filenames we want. The first 2 letters identify
 // the Kassenart (AO/EK/BK/IK/BN/LK), then verfahren (05 for SoLE), then
