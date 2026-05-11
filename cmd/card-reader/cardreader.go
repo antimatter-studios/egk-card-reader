@@ -44,22 +44,25 @@ func setupCardReader() (*scard.Context, []string, error) {
 }
 
 // loadCardData fetches CardData from one of:
-//   - "cardreader"            → PC/SC (Cherry / OMNIKEY / any CCID reader)
-//   - "orga" or "orga:<path>" → Ingenico/Worldline ORGA 9xx over CDC-ACM
+//   - "cardreader"            → auto-detect (ORGA on /dev/cu.usbmodem*, else PC/SC)
+//   - "orga" or "orga:<path>" → force the Ingenico/Worldline ORGA 9xx driver
+//   - "pcsc" / "generic"      → force PC/SC (Cherry / OMNIKEY / any CCID reader)
 //   - a file path             → parse a previously written .gdt / .hl7 / .fhir.json
 //
-// For the two reader inputs the returned cleanup closes the underlying handles;
+// For the reader inputs the returned cleanup closes the underlying handles;
 // for file input cleanup is nil.
 func loadCardData(input string) (*egk.CardData, func(), error) {
 	switch {
 	case input == "cardreader":
-		return loadCardDataPCSC()
+		return loadCardDataAuto()
 	case input == "orga" || strings.HasPrefix(input, "orga:"):
 		dev := ""
 		if strings.HasPrefix(input, "orga:") {
 			dev = strings.TrimPrefix(input, "orga:")
 		}
 		return loadCardDataORGA(dev)
+	case input == "pcsc" || input == "generic":
+		return loadCardDataPCSC()
 	}
 
 	if _, err := os.Stat(input); err != nil {
@@ -90,7 +93,22 @@ func loadCardData(input string) (*egk.CardData, func(), error) {
 	}
 }
 
-// loadCardDataPCSC routes the PC/SC path through the reader factory.
+// loadCardDataAuto auto-detects the best reader (ORGA via USB VID/PID match,
+// else PC/SC) and prints identifying info so the user can confirm which
+// device is being used and why.
+func loadCardDataAuto() (*egk.CardData, func(), error) {
+	probe := reader.Detect()
+	pick, err := probe.Pick()
+	if err != nil {
+		return nil, nil, err
+	}
+	if pick.Kind == "pcsc" {
+		fmt.Fprintln(os.Stderr, "Waiting for card insertion (15s)...")
+	}
+	return loadCardDataVia(reader.Options{})
+}
+
+// loadCardDataPCSC forces the PC/SC path.
 func loadCardDataPCSC() (*egk.CardData, func(), error) {
 	fmt.Fprintln(os.Stderr, "Waiting for card insertion (15s)...")
 	return loadCardDataVia(reader.Options{Force: "generic"})
@@ -103,12 +121,15 @@ func loadCardDataORGA(devNode string) (*egk.CardData, func(), error) {
 }
 
 // loadCardDataVia is the common path: open a reader session via the factory,
-// read the eGK in slot 1, return the parsed data plus a cleanup hook.
+// print device identification, read the eGK in slot 1, return the parsed
+// data plus a cleanup hook.
 func loadCardDataVia(opts reader.Options) (*egk.CardData, func(), error) {
 	s, err := reader.Open(opts)
 	if err != nil {
 		return nil, nil, err
 	}
+	fmt.Fprintln(os.Stderr, "Reader detected:")
+	fmt.Fprintln(os.Stderr, s.Identify())
 	cleanup := func() { _ = s.Close() }
 	card, err := s.Slot(1)
 	if err != nil {

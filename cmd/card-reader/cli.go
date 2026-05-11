@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -82,6 +83,8 @@ func (r *ReadCmd) Validate() error {
 }
 
 func (r *ReadCmd) Run() error {
+	fmt.Fprintln(os.Stderr, chrome())
+
 	if r.Debug {
 		ctx, readers, err := setupCardReader()
 		if err != nil {
