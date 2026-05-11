@@ -42,6 +42,14 @@ func Read(card Card) (*CardData, error) {
 	if mfErr != nil && os.Getenv("EGK_TRACE") == "1" {
 		fmt.Fprintf(os.Stderr, "[apdu] EF.GDO read skipped: %v\n", mfErr)
 	}
+	if v, verr := readVersion2(card); verr == nil && v != nil {
+		if mf == nil {
+			mf = &MFData{}
+		}
+		mf.Version2 = v
+	} else if verr != nil && os.Getenv("EGK_TRACE") == "1" {
+		fmt.Fprintf(os.Stderr, "[apdu] EF.Version2 read skipped: %v\n", verr)
+	}
 
 	fcp, err := selectByAID(card, aidHCA)
 	if err != nil {

@@ -157,6 +157,18 @@ func DiagnosticFields(d *CardData) []FormField {
 		Source: "MF.EF.GDO",
 		Note:   "Integrated Circuit Card Serial Number — uniquely identifies the physical chip.",
 	})
+	if v := d.MF.Version2; v != nil {
+		fields = append(fields,
+			FormField{Label: "Version2 / C0", Value: v.TagC0, Source: "MF.EF.Version2",
+				Note: "First version block — gemSpec_eGK_ObjSys / Objektsystem on most cards."},
+			FormField{Label: "Version2 / C1", Value: v.TagC1, Source: "MF.EF.Version2",
+				Note: "Second version block — Produktidentifikation."},
+			FormField{Label: "Version2 / C2", Value: v.TagC2, Source: "MF.EF.Version2",
+				Note: "Version der Personalisierung (often carries manufacturer string)."},
+			FormField{Label: "Version2 / C3", Value: v.TagC3, Source: "MF.EF.Version2",
+				Note: "COS / chip OS version block; empty on cards that don't emit it."},
+		)
+	}
 	return fields
 }
 

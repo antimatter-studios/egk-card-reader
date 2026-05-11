@@ -541,6 +541,12 @@ func TestReadEndToEnd(t *testing.T) {
 			// SELECT EF.GDO at MF (FID 2F02 before HCA is selected).
 			currentSrc = gdo
 			return []byte{0x90, 0x00}, nil
+		case apdu[1] == 0xA4 && apdu[2] == 0x02 && apdu[3] == 0x0C && len(apdu) >= 7 &&
+			((apdu[5] == 0xD0 && apdu[6] == 0x80) || (apdu[5] == 0x2F && apdu[6] == 0x11)):
+			// SELECT EF.Version2 candidates — report "not present" so readVersion2
+			// returns nil cleanly. (Real-card behaviour is exercised in
+			// TestReadVersion2_*.)
+			return []byte{0x6A, 0x82}, nil
 		case apdu[1] == 0xA4 && apdu[2] == 0x04:
 			return append(append([]byte{}, fcp...), 0x90, 0x00), nil
 		case apdu[1] == 0xB0:
