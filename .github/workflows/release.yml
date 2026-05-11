@@ -140,7 +140,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4  # needed for generate_release_notes
+      - uses: actions/checkout@v4
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -156,12 +156,39 @@ jobs:
           cd dist
           sha256sum * > SHA256SUMS
 
+      # Pull the section for this tag out of CHANGELOG.md. Tag is e.g.
+      # "v1.0.0"; the CHANGELOG header is "## [1.0.0] — ...". A tag with no
+      # matching section fails the release — every release must be
+      # documented in the file.
+      - name: Extract changelog section
+        id: changelog
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          body=$(awk -v ver="$version" '
+            /^## \[/ {
+              if (capture) exit
+              if ($0 ~ "^## \\[" ver "\\]") { capture = 1; next }
+            }
+            capture { print }
+          ' CHANGELOG.md)
+          # Strip leading and trailing blank lines.
+          body=$(printf "%s" "$body" | sed -e '/./,$!d' | tac | sed -e '/./,$!d' | tac)
+          if [ -z "$body" ]; then
+            echo "::error::No CHANGELOG.md section found for ${version} — add an entry under '## [${version}]' before tagging."
+            exit 1
+          fi
+          {
+            echo "body<<RELEASE_NOTES_EOF"
+            echo "$body"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          body: ${{ steps.changelog.outputs.body }}
           files: |
             dist/card-reader-*.tar.gz
             dist/card-reader-*.zip
             dist/SHA256SUMS
-          generate_release_notes: true
           fail_on_unmatched_files: true
