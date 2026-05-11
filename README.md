@@ -132,6 +132,17 @@ What each layer is for:
   - `EF.VD` (`2F02`) — packs *AVD* (Allgemeine Versicherungsdaten) + *GVD* (Geschützte Versichertendaten). The first 8 bytes are four big-endian pointers (`AVD-start, AVD-end, GVD-start, GVD-end`) into the rest of the file; each section is independently gzipped XML.
 - **Decompress + parse** ([internal/egk/parse.go](internal/egk/parse.go)) — gunzip, then `encoding/xml` with a `CharsetReader` that resolves `ISO-8859-15` (the gematik-declared charset) via `golang.org/x/text/encoding/charmap`. The schemas are gematik `gemSpec_eGK_Fach` v5.2 — `UC_PersoenlicheVersichertendatenXML`, `UC_AllgemeineVersicherungsdatenXML`, `UC_GeschuetzteVersichertendatenXML`.
 
+### Additional reads beyond EF.PD / EF.VD
+
+Around the main public-data pipeline above, the reader also pulls four diagnostic / identification artefacts:
+
+- **EF.GDO at MF** ([internal/egk/mf.go](internal/egk/mf.go)) — 10-byte **ICCSN** (Integrated Circuit Card Serial Number, BER-TLV tag `5A`). Card identity, never PIN-protected. Surfaced as a `--glossary` diagnostic row.
+- **EF.Version2 at MF** ([internal/egk/mf.go](internal/egk/mf.go)) — G2 card version tags (chip type, object-system version, application versions). Useful for telling G2 cards apart from G1 in the same fleet.
+- **EF.StatusVD inside DF.HCA** ([internal/egk/status.go](internal/egk/status.go)) — insurance-data freshness markers (last-update timestamp, validity status). Surfaced alongside the parsed insurance data so practices can spot stale cards.
+- **DF.ESIGN cardholder X.509 certs** ([internal/egk/esign.go](internal/egk/esign.go)) — the two publicly readable cert slots: `FID C500` (RSA-2048 cardholder authentication) and `FID C504` (ECDSA on brainpoolP256r1 — Go stdlib doesn't decode the curve, so the parser falls back to a tolerant ASN.1 walk that pulls Subject / Issuer / Validity / signature-alg OID directly out of the TBSCertificate). The remaining `C500..C50F` slots are CV-certs gated by PIN / C2C and are deliberately skipped here.
+
+All four are best-effort — a card that doesn't expose any of them just yields a `nil` field in `CardData`, and the rest of the read proceeds.
+
 What we get out:
 
 | Source | Field | Used for |
@@ -576,10 +587,16 @@ internal/c2c/                        # gemSpec_COS chapter 13 card-to-card authe
 └── sm/                              # gemSpec_COS §10 Secure Messaging + AES-CMAC
 
 internal/egk/
+├── card.go                          # Card interface (Transmit) — implemented by both transports
+├── constants.go                     # gematik AIDs, FIDs, SFIs, INS codes — named, not magic
 ├── apdu.go                          # SELECT by AID, READ BINARY by SFI / FID fallback
 ├── egk.go                           # high-level Read(card) → CardData
 ├── parse.go                         # gunzip + XML decode (ISO-8859-15) for PD / AVD / GVD
-└── form.go                          # FormMapping with optional KTDA enrichment
+├── mf.go                            # MF-level reads: EF.GDO (ICCSN) + EF.Version2
+├── status.go                        # EF.StatusVD inside DF.HCA — VD freshness markers
+├── esign.go                         # DF.ESIGN cardholder X.509 certs (RSA + brainpool fallback)
+├── probe.go                         # APDU sweep — surveys known AIDs/EFs (used by card-probe)
+└── form.go                          # FormMapping + diagnostic rows with optional KTDA enrichment
 
 internal/ktda/
 ├── ke0.go                           # KE0 EDIFACT parser (UNB/UNH/IDK/VDT/VKG/NAM/UNT)
@@ -616,6 +633,7 @@ output/                              # populated by `--file` runs — gitignored
 ### Implemented (working today)
 
 - **Public eGK read pipeline** over PC/SC or ORGA — `EF.PD` + `EF.VD`, gunzip + ISO-8859-15 XML decode, full GKV form mapping with KTDA enrichment.
+- **Diagnostic & identification reads** — `EF.GDO` (ICCSN), `EF.Version2` (G2 card version tags), `EF.StatusVD` inside `DF.HCA`, and `DF.ESIGN` cardholder X.509 certs (RSA-2048 + brainpoolP256r1 via tolerant ASN.1 walk). Surfaced as `--glossary` rows; all best-effort.
 - **Format conversion** — GDT 2.10 / HL7 v2.5 ADT^A04 / HL7 FHIR R4 / JSON, all bidirectional (encode + parse + comprehension table). Round-trip tested.
 - **ORGA 9xx driver on macOS + Linux** — ISO 7816-3 T=1 over USB-CDC-ACM. USB VID/PID detection (no false positives from generic CDC-ACM devices). RESYNCH, IFS / WTX auto-ack, chained I-blocks. Recovery procedure for "Fatal Error 3 / SW=64A2" documented and tested.
 - **Reader-driver abstraction** — `Session` + `Card` interfaces, factory with autodetect, `Identify() DeviceInfo` for self-describing transports. Cross-OS USB probe (macOS ioreg, Linux sysfs, Windows stub, fallback stub).
@@ -624,6 +642,7 @@ output/                              # populated by `--file` runs — gitignored
 - **Tracing** — `ORGA_TRACE=1` for T=1 block log; `EGK_TRACE=1` for APDU / SFI-fallback log.
 - **KTDA quarterly refresh** — scrape `gkv-datenaustausch.de`, download 6 KE0 files, parse EDIFACT, merge, store as `ktda.json`.
 - **Companion debug tools** — `orga-probe -identify`, `-readcert`, `-c2c`, plus the older `card-probe` for PC/SC.
+- **Hardware-free test infrastructure** — scriptable `fakeSerialIO` ([internal/reader/orga/mock_test.go](internal/reader/orga/mock_test.go)) lets the orga T=1 transport, CT-BCS layer, exchange state machine, and safety guard be unit-tested without a physical terminal. Overall statement coverage **73.6 %** (orga 83.6 %, reader 62.1 %, c2c 83.8 %, egk 83.9 %, all parsing/encoding packages 88–100 %). Remaining gaps are hardware-bound entry points (`orga.Open`, `openSerial`, `generic.Open`) — see [docs/test-plan.md](docs/test-plan.md).
 
 ### Not yet implemented
 
