@@ -95,6 +95,39 @@ func renderForm(fields []egk.FormField) string {
 	)
 }
 
+// renderDiagnostics is a compact card-level diagnostic banner (ICCSN, OS
+// version, etc.) rendered below the billing form. Distinct from renderForm so
+// the visual separation between billing data and card-identity data is clear.
+func renderDiagnostics(fields []egk.FormField) string {
+	if len(fields) == 0 {
+		return ""
+	}
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFB454")).Padding(0, 1)
+	cellStyle := lipgloss.NewStyle().Padding(0, 1)
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#585B70"))).
+		Headers("Diagnostic", "Value", "Source", "Note").
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			return cellStyle
+		})
+	for _, f := range fields {
+		value := valueStyle.Render(f.Value)
+		if !f.Filled() {
+			value = missValStyle.Render("<missing>")
+		}
+		note := ""
+		if f.Note != "" {
+			note = noteStyle.Render(wrap(f.Note, 60))
+		}
+		t.Row(labelStyle.Render(f.Label), value, sourceStyle.Render(f.Source), note)
+	}
+	return t.String()
+}
+
 // chrome is the title + subtitle banner that sits above every --table output,
 // regardless of format. Keeps the visual identity consistent across the form,
 // GDT, FHIR, and HL7 ADT views.
@@ -134,7 +167,8 @@ func renderTable(format string, data *egk.CardData, ik *egk.IKInfo, glossary boo
 	switch format {
 	case "form", "json":
 		// json is the form-mapping serialised — same data, same table view.
-		body = renderForm(egk.FormMapping(data, ik))
+		body = renderForm(egk.FormMapping(data, ik)) + "\n\n" +
+			renderDiagnostics(egk.DiagnosticFields(data))
 	case "gdt":
 		body = document.RenderGDT(data, ik)
 	case "hl7-fhir":
@@ -144,7 +178,7 @@ func renderTable(format string, data *egk.CardData, ik *egk.IKInfo, glossary boo
 	default:
 		return "", fmt.Errorf("no table renderer for --output %s", format)
 	}
-	parts := []string{chrome(), body}
+	parts := []string{body}
 	if glossary {
 		parts = append(parts, "", renderGlossary())
 	}

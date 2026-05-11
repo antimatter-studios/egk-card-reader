@@ -137,16 +137,41 @@ func FormMapping(d *CardData, ikInfo *IKInfo) []FormField {
 	}
 }
 
-// explainSelektiv decodes the Aerztlich/Zahnaerztlich code per gemSpec_eGK_Fach:
-// "0" = no participation, "1" = participates in at least one selective contract.
+// DiagnosticFields returns card-level diagnostic info — ICCSN, OS/objsys
+// version, status — distinct from the billing-form fields in FormMapping.
+// These come from MF and DF.HCA admin EFs (no PIN required) and are useful
+// for debugging / support, not for clinical or billing output.
+func DiagnosticFields(d *CardData) []FormField {
+	var fields []FormField
+	if d == nil || d.MF == nil {
+		return []FormField{{
+			Label:  "ICCSN",
+			Value:  "",
+			Source: "MF.EF.GDO",
+			Note:   "Card serial not read (selectMF/EF.GDO failed or skipped).",
+		}}
+	}
+	fields = append(fields, FormField{
+		Label:  "ICCSN",
+		Value:  d.MF.ICCSN,
+		Source: "MF.EF.GDO",
+		Note:   "Integrated Circuit Card Serial Number — uniquely identifies the physical chip.",
+	})
+	return fields
+}
+
+// explainSelektiv decodes the Aerztlich/Zahnaerztlich code per gemSpec_eGK_Fach.
+// The field is a single digit (Integer 0..9). 0 means no participation; any
+// non-zero digit means the cardholder participates in at least one selective
+// contract (the exact contract identity isn't on the card — only the flag).
 func explainSelektiv(s string) string {
-	switch s {
-	case "":
+	switch {
+	case s == "":
 		return "not present on card"
-	case "0":
+	case s == "0":
 		return "0 = keine Teilnahme an Selektivverträgen"
-	case "1":
-		return "1 = Teilnahme an mind. einem Selektivvertrag"
+	case len(s) == 1 && s[0] >= '1' && s[0] <= '9':
+		return s + " = Teilnahme an Selektivvertrag (Code per Kassenkonfiguration)"
 	}
 	return ""
 }

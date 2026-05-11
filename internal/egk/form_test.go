@@ -333,12 +333,50 @@ func TestFormMappingSelektivContracts(t *testing.T) {
 	}
 }
 
+func TestDiagnosticFields_WithICCSN(t *testing.T) {
+	d := &CardData{
+		MF: &MFData{ICCSN: "80276000000000000000"},
+	}
+	fields := DiagnosticFields(d)
+	if len(fields) == 0 {
+		t.Fatal("expected at least one diagnostic field")
+	}
+	iccsn, ok := fieldByLabel(fields, "ICCSN")
+	if !ok {
+		t.Fatal("ICCSN field missing")
+	}
+	if iccsn.Value != "80276000000000000000" {
+		t.Errorf("ICCSN = %q", iccsn.Value)
+	}
+	if iccsn.Source != "MF.EF.GDO" {
+		t.Errorf("Source = %q", iccsn.Source)
+	}
+}
+
+func TestDiagnosticFields_NoMFReportsMissing(t *testing.T) {
+	for _, d := range []*CardData{nil, {}} {
+		fields := DiagnosticFields(d)
+		if len(fields) == 0 {
+			t.Fatal("expected placeholder diagnostic row")
+		}
+		iccsn, _ := fieldByLabel(fields, "ICCSN")
+		if iccsn.Value != "" {
+			t.Errorf("ICCSN should be empty when MF unread, got %q", iccsn.Value)
+		}
+		if !strings.Contains(iccsn.Note, "not read") {
+			t.Errorf("Note should explain missing, got %q", iccsn.Note)
+		}
+	}
+}
+
 func TestExplainSelektiv(t *testing.T) {
 	cases := []struct{ in, wantSub string }{
 		{"", "not present"},
 		{"0", "keine Teilnahme"},
 		{"1", "Teilnahme"},
-		{"9", ""},
+		{"9", "Teilnahme"},
+		{"X", ""},
+		{"99", ""},
 	}
 	for _, c := range cases {
 		got := explainSelektiv(c.in)

@@ -525,13 +525,21 @@ func TestReadEndToEnd(t *testing.T) {
 	// fcp returned on SELECT AID — anything, we just want non-nil.
 	fcp := []byte{0x6F, 0x03, 0xAA, 0xBB, 0xCC}
 
-	// Track which SFI was last read so plain-mode reads (used when the
-	// offset passes 255) can return the right file.
+	// Sample ICCSN: 5A 0A <10 bytes>.
+	gdo := []byte{0x5A, 0x0A, 0x80, 0x27, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+
+	// Track which file was last selected so plain-mode READ BINARY (used when
+	// the offset passes 255 or when reading non-SFI EFs like EF.GDO) returns
+	// the right bytes.
 	var currentSrc []byte
 
 	stub := stubCard(func(apdu []byte) ([]byte, error) {
 		switch {
 		case apdu[1] == 0xA4 && apdu[3] == 0x0C && len(apdu) >= 7 && apdu[5] == 0x3F && apdu[6] == 0x00:
+			return []byte{0x90, 0x00}, nil
+		case apdu[1] == 0xA4 && apdu[2] == 0x02 && apdu[3] == 0x0C && len(apdu) >= 7 && apdu[5] == 0x2F && apdu[6] == 0x02:
+			// SELECT EF.GDO at MF (FID 2F02 before HCA is selected).
+			currentSrc = gdo
 			return []byte{0x90, 0x00}, nil
 		case apdu[1] == 0xA4 && apdu[2] == 0x04:
 			return append(append([]byte{}, fcp...), 0x90, 0x00), nil
@@ -582,6 +590,9 @@ func TestReadEndToEnd(t *testing.T) {
 	}
 	if !bytes.Equal(cd.HCAFCP, fcp) {
 		t.Errorf("HCAFCP not propagated: %x vs %x", cd.HCAFCP, fcp)
+	}
+	if cd.MF == nil || cd.MF.ICCSN != "80276000000000000000" {
+		t.Errorf("MF.ICCSN not populated: %+v", cd.MF)
 	}
 }
 

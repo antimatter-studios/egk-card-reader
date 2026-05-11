@@ -7,6 +7,7 @@ import (
 
 // CardData bundles everything we extract from the eGK in one read session.
 type CardData struct {
+	MF        *MFData // MF-level diagnostics (ICCSN, etc.); nil if unreadable
 	Personal  *PersonalData
 	Insurance *InsuranceData
 	Protected *ProtectedData
@@ -33,6 +34,15 @@ func Read(card Card) (*CardData, error) {
 		}
 	}
 
+	// Read MF-level diagnostics (ICCSN) before SELECT DF.HCA. After HCA is
+	// selected, FID 2F02 means EF.VD, not EF.GDO, so this is the only safe
+	// place to grab it. Non-fatal: some cards reject the EF or selectMF was
+	// skipped above — diagnostic data is best-effort.
+	mf, mfErr := readMF(card)
+	if mfErr != nil && os.Getenv("EGK_TRACE") == "1" {
+		fmt.Fprintf(os.Stderr, "[apdu] EF.GDO read skipped: %v\n", mfErr)
+	}
+
 	fcp, err := selectByAID(card, aidHCA)
 	if err != nil {
 		return nil, fmt.Errorf("select HCA: %w", err)
@@ -57,6 +67,7 @@ func Read(card Card) (*CardData, error) {
 	}
 
 	return &CardData{
+		MF:        mf,
 		Personal:  pd,
 		Insurance: vd,
 		Protected: gvd,

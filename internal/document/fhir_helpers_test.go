@@ -417,14 +417,20 @@ func TestFormMappingJSONEncode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rows []map[string]string
-	if err := json.Unmarshal(doc.Bytes, &rows); err != nil {
+	var payload struct {
+		Form        []map[string]string `json:"form"`
+		Diagnostics []map[string]string `json:"diagnostics"`
+	}
+	if err := json.Unmarshal(doc.Bytes, &payload); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if len(rows) != 23 {
-		t.Errorf("expected 23 rows, got %d", len(rows))
+	if len(payload.Form) != 23 {
+		t.Errorf("expected 23 form rows, got %d", len(payload.Form))
 	}
-	for _, r := range rows {
+	if len(payload.Diagnostics) == 0 {
+		t.Errorf("expected at least one diagnostic row")
+	}
+	for _, r := range append(payload.Form, payload.Diagnostics...) {
 		for _, k := range []string{"label", "value", "source", "note"} {
 			if _, ok := r[k]; !ok {
 				t.Errorf("row missing key %q: %+v", k, r)
