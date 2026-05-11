@@ -498,7 +498,6 @@ func TestUnwrap_SSCMismatch(t *testing.T) {
 // would catch a hang, but each subtest is independent and small.
 func TestUnwrap_MalformedDO(t *testing.T) {
 	t.Parallel()
-	host := newFixedSession(t)
 
 	cases := map[string][]byte{
 		"empty":                 nil,
@@ -517,6 +516,7 @@ func TestUnwrap_MalformedDO(t *testing.T) {
 		name, in := name, in
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			host := newFixedSession(t)
 			_, _, err := host.Unwrap(in)
 			if err == nil {
 				t.Fatalf("expected error for %q", name)
