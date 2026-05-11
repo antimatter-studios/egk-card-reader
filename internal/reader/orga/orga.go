@@ -61,13 +61,20 @@ type Options struct {
 }
 
 // Open connects to an ORGA terminal and resets T=1 state with a RESYNCH.
-// Caller must Close when done.
+// Caller must Close when done. DevNode is required — callers should
+// discover the path via the parent reader package's USB probe rather than
+// relying on a /dev glob, which could return a stale node when the
+// terminal has just disconnected.
 func Open(opts Options) (*Terminal, error) {
 	dev := opts.DevNode
 	if dev == "" {
+		// Last-resort glob — kept for orga-probe-style direct callers, but
+		// emit a warning-shaped error rather than picking blindly: a stale
+		// /dev/cu.usbmodem* node can outlive its USB device for several
+		// seconds on macOS, and opening one ends in ENXIO on T=1 resync.
 		matches, err := filepath.Glob("/dev/cu.usbmodem*")
 		if err != nil || len(matches) == 0 {
-			return nil, fmt.Errorf("orga: no /dev/cu.usbmodem* device found; is the ORGA plugged in?")
+			return nil, fmt.Errorf("orga: no /dev/cu.usbmodem* device found; is the ORGA plugged in and out of DFU mode?")
 		}
 		dev = matches[0]
 	}
@@ -77,7 +84,7 @@ func Open(opts Options) (*Terminal, error) {
 	}
 	io, err := openSerial(dev, baud)
 	if err != nil {
-		return nil, fmt.Errorf("orga: open %s: %w", dev, err)
+		return nil, fmt.Errorf("orga: open %s: %w", dev, friendlySerialError(err))
 	}
 	t := &Terminal{
 		io:         io,
@@ -90,7 +97,7 @@ func Open(opts Options) (*Terminal, error) {
 	}
 	if err := t.resync(); err != nil {
 		io.Close()
-		return nil, fmt.Errorf("orga: T=1 resync: %w", err)
+		return nil, fmt.Errorf("orga: T=1 resync on %s: %w", dev, friendlySerialError(err))
 	}
 	return t, nil
 }

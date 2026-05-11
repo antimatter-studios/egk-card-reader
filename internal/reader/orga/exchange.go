@@ -10,13 +10,15 @@ import (
 func (t *Terminal) resync() error {
 	hostToTerm := (terminalAddr << 4) | hostAddr
 	rb := buildBlock(hostToTerm, 0xC0, nil)
+	traceTX(rb)
 	if _, err := t.io.Write(rb); err != nil {
 		return err
 	}
-	blk, _, err := readOneBlock(t.io, time.Now().Add(t.timeout))
+	blk, raw, err := readOneBlock(t.io, time.Now().Add(t.timeout))
 	if err != nil {
 		return err
 	}
+	traceRX(raw)
 	if blk.PCB != 0xE0 {
 		return fmt.Errorf("expected S(RESYNCH response), got PCB=%02X", blk.PCB)
 	}
@@ -46,10 +48,11 @@ func (t *Terminal) transactWithNAD(dad byte, inf []byte) ([]byte, error) {
 	deadline := time.Now().Add(t.timeout)
 	var accum []byte
 	for {
-		blk, _, err := readOneBlock(t.io, deadline)
+		blk, raw, err := readOneBlock(t.io, deadline)
 		if err != nil {
 			return nil, err
 		}
+		traceRX(raw)
 		if blk.NAD != inNAD && blk.NAD != 0x00 {
 			return nil, fmt.Errorf("orga: unexpected NAD %02X (expected %02X)", blk.NAD, inNAD)
 		}
@@ -89,6 +92,7 @@ func (t *Terminal) transactWithNAD(dad byte, inf []byte) ([]byte, error) {
 
 func (t *Terminal) writeBlock(nad, pcb byte, inf []byte) error {
 	b := buildBlock(nad, pcb, inf)
+	traceTX(b)
 	_, err := t.io.Write(b)
 	return err
 }
