@@ -3,9 +3,20 @@ package reader
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 
 	"github.com/christhomas/card-reader/internal/reader/generic"
+	"github.com/christhomas/card-reader/internal/reader/usb"
+)
+
+// ORGAUSBVendorID / ORGAUSBProductID identify the ORGA 9xx terminal family
+// (covers 900, 920, 930, 930 M). Used by the platform-specific USB-descriptor
+// probe to confirm a /dev/cu.usbmodem* is actually an ORGA before claiming it.
+//
+// VID 0x0780 = Ingenico Healthcare GmbH (ex-Sagem Monetel).
+// PID 0x1202 = ORGA 900 Smart Card Terminal Virtual Com Port family.
+const (
+	ORGAUSBVendorID  = 0x0780
+	ORGAUSBProductID = 0x1202
 )
 
 // Driver identifies one detected reader by kind and device handle.
@@ -24,20 +35,34 @@ func (d Driver) String() string {
 }
 
 // Probe is a snapshot of the smart-card-reader hardware visible to the host
-// at the moment Detect was called. Cheap — inspects /dev/cu.usbmodem* and
-// the PC/SC daemon's reader list; does NOT open any device or wait for card
-// insertion.
+// at the moment Detect was called. Cheap — queries USB enumeration via the
+// usb subpackage and PC/SC reader-list; does NOT open any device or wait
+// for card insertion.
 type Probe struct {
-	ORGADevices []string // /dev/cu.usbmodem* nodes that look like ORGA
-	PCSCReaders []string // PC/SC reader names (pcscd's view)
+	ORGADevices []string     // device paths of detected ORGA terminals
+	USBDevices  []usb.Device // full USB descriptors parallel to ORGADevices
+	PCSCReaders []string     // PC/SC reader names (pcscd's view)
 }
 
 // Detect inspects the system for available reader hardware. Always returns
 // a non-nil *Probe; check the slices for emptiness or call Empty.
+//
+// ORGA detection consults the platform-specific usb.Probe (ioreg on macOS,
+// sysfs on Linux, stub on other OSes) to enumerate USB devices matching the
+// ORGA VID/PID. Unrelated CDC-ACM devices (Arduinos, MCUs, foreign
+// terminals) are intentionally NOT reported, so we never ask the ORGA
+// driver to talk to something that isn't an ORGA.
+//
+// USBDevices retains the full descriptor metadata (manufacturer / product /
+// serial) for each detected ORGA so callers can present rich identification
+// before opening.
 func Detect() *Probe {
 	p := &Probe{}
-	if devs, _ := filepath.Glob("/dev/cu.usbmodem*"); len(devs) > 0 {
-		p.ORGADevices = devs
+	if devs, err := usb.Default().FindDevices(ORGAUSBVendorID, ORGAUSBProductID); err == nil {
+		for _, d := range devs {
+			p.ORGADevices = append(p.ORGADevices, d.DevicePath)
+			p.USBDevices = append(p.USBDevices, d)
+		}
 	}
 	if r, err := generic.Open(); err == nil {
 		p.PCSCReaders = r.Readers()
