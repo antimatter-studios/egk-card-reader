@@ -8,8 +8,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 
-	"github.com/christhomas/card-reader/internal/document"
-	"github.com/christhomas/card-reader/internal/egk"
+	"github.com/christhomas/card-reader/pkg/document"
+	"github.com/christhomas/card-reader/pkg/egk"
 )
 
 // ----- lipgloss styles for the form output -----

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/christhomas/card-reader/internal/document"
-	"github.com/christhomas/card-reader/internal/output"
+	"github.com/christhomas/card-reader/pkg/document"
+	"github.com/christhomas/card-reader/pkg/output"
 )
 
 // longDescription is shown above the auto-generated usage on `--help`. The

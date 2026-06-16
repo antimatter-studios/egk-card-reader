@@ -4,7 +4,7 @@ Goal: implement card-to-card mutual authentication between an SMC-B and an eGK s
 
 ## State of the world
 
-- Driver: ORGA 930 M works on macOS via `internal/reader/orga` (T=1 over CDC-ACM). Both slots reachable; APDUs to slot 1 (eGK) and slot 2 (SMC-B) go through `*orga.Slot.Transmit`.
+- Driver: ORGA 930 M works on macOS via `pkg/reader/orga` (T=1 over CDC-ACM). Both slots reachable; APDUs to slot 1 (eGK) and slot 2 (SMC-B) go through `*orga.Slot.Transmit`.
 - Slot 1 eGK: real production card, G1, RSA-2048 era.
 - Slot 2 SMC-B: structurally correct SMC-B, but issued by **gematik TEST-ONLY CA** and expired 2024-12-11. Suitable for development; **will not unlock the real eGK end-to-end**. The C2C code itself is the goal.
 

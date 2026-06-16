@@ -210,7 +210,7 @@ deployment.
 - `LLL` is **byte** length, not character length. With ISO-8859-15, German
   umlauts are 1 byte each, but the encoder must compute the length on the
   encoded bytes — never on the UTF-8 source string. The implementation in
-  `internal/egk/gdt.go` does the encode-then-measure dance for this reason.
+  `pkg/egk/gdt.go` does the encode-then-measure dance for this reason.
 
 ## Cross-cutting questions
 

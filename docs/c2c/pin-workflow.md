@@ -98,7 +98,7 @@ These properties are why this repo treats VERIFY as a destructive APDU.
 
 ## Why VERIFY is blocked in code
 
-[`internal/reader/orga/safety.go`](../../internal/reader/orga/safety.go)
+[`pkg/reader/orga/safety.go`](../../pkg/reader/orga/safety.go)
 refuses any APDU with `INS=0x20` (VERIFY) on a non-CT-BCS CLA unless the
 caller explicitly sets `Options.AllowPINWrite=true`. The flag exists so
 that a hex-byte typo in a probe session can never burn a PIN attempt.
@@ -111,7 +111,7 @@ card automatically — even more dangerous because the host wouldn't see
 the bytes being sent.
 
 Refusal-list source of truth:
-[`internal/reader/orga/safety.go::dangerousISO`](../../internal/reader/orga/safety.go).
+[`pkg/reader/orga/safety.go::dangerousISO`](../../pkg/reader/orga/safety.go).
 
 ## When will VERIFY actually be issued?
 

@@ -65,7 +65,7 @@ gone. Opening the device returns `ENXIO` ("device not configured").
 The driver maps this to a friendly error:
 
 ```
-internal/reader/orga/errors.go::friendlySerialError(syscall.ENXIO)
+pkg/reader/orga/errors.go::friendlySerialError(syscall.ENXIO)
 → "...the kernel sees the /dev node but the USB endpoint isn't responding.
    If the terminal just rebooted (e.g. after a Fatal Error), wait ~5s
    for re-enumeration. If the device went into DFU mode (PID 0xDF55),
@@ -99,12 +99,12 @@ After this incident, three changes landed:
 
 1. **`ORGA_TRACE=1`** env var logs every T=1 block sent/received to
    stderr with a millisecond timestamp + PCB classification. Implemented
-   in [`internal/reader/orga/trace.go`](../../internal/reader/orga/trace.go).
+   in [`pkg/reader/orga/trace.go`](../../pkg/reader/orga/trace.go).
 2. **Friendly ENXIO mapping** in
-   [`internal/reader/orga/errors.go`](../../internal/reader/orga/errors.go).
+   [`pkg/reader/orga/errors.go`](../../pkg/reader/orga/errors.go).
    Also covers ENOENT, EACCES, EBUSY.
 3. **Fail-fast for `--input orga`** when the USB probe finds no matching
    device. Previously the driver would glob `/dev/cu.usbmodem*` and pick
    any matching node, which after a terminal reboot could be a stale
-   leftover. Fix in [`internal/reader/reader.go`](../../internal/reader/reader.go)
+   leftover. Fix in [`pkg/reader/reader.go`](../../pkg/reader/reader.go)
    `openORGA`.

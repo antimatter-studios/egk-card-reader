@@ -53,7 +53,7 @@ func (t *Terminal) CTData(dad, sad byte, cmd []byte) (resp []byte, err error)
 func (t *Terminal) Close() error
 ```
 
-Higher layers (CT-BCS helpers, slot management, eGK APDU dispatch) build on this. Eventually plug into the existing `internal/egk/` so the same APDU code paths work over either Cherry CCID (via `github.com/ebfe/scard`) or ORGA serial.
+Higher layers (CT-BCS helpers, slot management, eGK APDU dispatch) build on this. Eventually plug into the existing `pkg/egk/` so the same APDU code paths work over either Cherry CCID (via `github.com/ebfe/scard`) or ORGA serial.
 
 ## Out of scope for this phase
 

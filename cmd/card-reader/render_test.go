@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/christhomas/card-reader/internal/egk"
+	"github.com/christhomas/card-reader/pkg/egk"
 )
 
 func TestWrap(t *testing.T) {
