@@ -4,7 +4,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
 )
 
 // Root is a trust anchor for one gematik PKI root certificate.

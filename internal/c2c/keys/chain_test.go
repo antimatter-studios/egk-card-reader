@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/christhomas/card-reader/internal/c2c/brainpool"
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/brainpool"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
 )
 
 // --- Brainpool adapter for crypto/ecdsa (mirrors brainpool_test.go) ------

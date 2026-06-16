@@ -10,9 +10,9 @@ import (
 
 	"github.com/ebfe/scard"
 
-	"github.com/christhomas/card-reader/pkg/document"
-	"github.com/christhomas/card-reader/pkg/egk"
-	"github.com/christhomas/card-reader/pkg/reader"
+	"github.com/antimatter-studios/egk-card-reader/pkg/document"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/reader"
 )
 
 // pcscContext is the subset of *scard.Context that this package needs.

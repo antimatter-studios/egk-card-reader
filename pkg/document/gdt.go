@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/text/encoding/charmap"
 
-	"github.com/christhomas/card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 // gdtEncoder is the Encoder registered as "gdt".

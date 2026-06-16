@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/christhomas/card-reader/pkg/document"
+	"github.com/antimatter-studios/egk-card-reader/pkg/document"
 )
 
 func TestFileWrite(t *testing.T) {

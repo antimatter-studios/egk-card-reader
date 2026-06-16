@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/christhomas/card-reader/pkg/reader/usb"
+	"github.com/antimatter-studios/egk-card-reader/pkg/reader/usb"
 )
 
 func TestDeviceInfo_StringOmitsEmptyFields(t *testing.T) {

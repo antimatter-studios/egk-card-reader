@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
 )
 
 // Card is the minimal APDU contract this package needs. It matches

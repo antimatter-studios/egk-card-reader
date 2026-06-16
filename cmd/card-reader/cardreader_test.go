@@ -11,8 +11,8 @@ import (
 
 	"github.com/ebfe/scard"
 
-	"github.com/christhomas/card-reader/pkg/document"
-	"github.com/christhomas/card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/document"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 func TestSuggestBaseName(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 
-	"github.com/christhomas/card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 // RenderGDT returns a lipgloss table rendering of the GDT 2.10 Satzart 6301

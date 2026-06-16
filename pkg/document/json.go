@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/christhomas/card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 // formMappingJSON is the --json output: the form mapping + card diagnostics

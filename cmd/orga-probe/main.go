@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/christhomas/card-reader/pkg/reader/orga"
+	"github.com/antimatter-studios/egk-card-reader/pkg/reader/orga"
 )
 
 func main() {

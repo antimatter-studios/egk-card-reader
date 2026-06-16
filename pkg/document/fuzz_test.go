@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/christhomas/card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 // fuzzSeedCardData is a small but populated CardData used to derive encoded

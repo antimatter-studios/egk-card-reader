@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/christhomas/card-reader/pkg/document"
-	"github.com/christhomas/card-reader/pkg/output"
+	"github.com/antimatter-studios/egk-card-reader/pkg/document"
+	"github.com/antimatter-studios/egk-card-reader/pkg/output"
 )
 
 // longDescription is shown above the auto-generated usage on `--help`. The

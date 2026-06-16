@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/christhomas/card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 func TestFhirPatientID(t *testing.T) {

@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/christhomas/card-reader/internal/c2c"
-	"github.com/christhomas/card-reader/internal/c2c/keys"
-	"github.com/christhomas/card-reader/pkg/reader/orga"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/keys"
+	"github.com/antimatter-studios/egk-card-reader/pkg/reader/orga"
 )
 
 // runC2C drives the C2C handshake's Discover + Validate phases against the

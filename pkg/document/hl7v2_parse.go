@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/christhomas/card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 // ParseHL7ADT reads an HL7 v2.5 ADT^A04 message (as produced by encodeADTA04)

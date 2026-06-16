@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/christhomas/card-reader/pkg/document"
+	"github.com/antimatter-studios/egk-card-reader/pkg/document"
 )
 
 // Writer persists a Document somewhere. Implementations cover stdout and

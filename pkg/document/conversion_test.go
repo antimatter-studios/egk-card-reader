@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/christhomas/card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 // This file documents — and tests — exactly which CardData fields survive

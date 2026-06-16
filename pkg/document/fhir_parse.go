@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/christhomas/card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 // ParseFHIR reads a FHIR R4 Bundle (collection) JSON document — the format

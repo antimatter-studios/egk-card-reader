@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/text/encoding/charmap"
 
-	"github.com/christhomas/card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 // ParseGDT reads a GDT 2.10 Satzart 6301 record (ISO-8859-15, CRLF-terminated

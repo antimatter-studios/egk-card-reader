@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/christhomas/card-reader/pkg/egk"
-	"github.com/christhomas/card-reader/pkg/ktda"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/ktda"
 )
 
 // KtdaCmd groups the insurer-table subcommands. The KE0 files are republished

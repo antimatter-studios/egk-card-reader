@@ -19,9 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/christhomas/card-reader/pkg/reader/generic"
-	"github.com/christhomas/card-reader/pkg/reader/orga"
-	"github.com/christhomas/card-reader/pkg/reader/usb"
+	"github.com/antimatter-studios/egk-card-reader/pkg/reader/generic"
+	"github.com/antimatter-studios/egk-card-reader/pkg/reader/orga"
+	"github.com/antimatter-studios/egk-card-reader/pkg/reader/usb"
 )
 
 // Card is one logical smart-card session — APDU in, response (data + SW1SW2) out.

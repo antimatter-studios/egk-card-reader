@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/christhomas/card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 // hl7v2ADTEncoder is the Encoder registered as "hl7adt".

@@ -40,7 +40,7 @@ import (
 	"crypto/sha1" //nolint:gosec // gemSpec_Krypt Algorithm-2 mandates SHA-1 for KDF
 	"encoding/binary"
 
-	"github.com/christhomas/card-reader/internal/c2c/sm"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/sm"
 )
 
 // aes128KeyLen is the truncation length for K_ENC and K_MAC under

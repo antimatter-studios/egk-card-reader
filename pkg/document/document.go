@@ -12,7 +12,7 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/christhomas/card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 // Document is the result of encoding card data in a specific format.

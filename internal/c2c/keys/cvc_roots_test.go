@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/christhomas/card-reader/internal/c2c/brainpool"
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/brainpool"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
 )
 
 func TestProductionCVCRoots_NonEmpty(t *testing.T) {

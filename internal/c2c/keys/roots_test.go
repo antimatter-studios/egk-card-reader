@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
 )
 
 // Embedded root expectations. Cross-check against sources.md.

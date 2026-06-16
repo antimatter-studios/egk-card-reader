@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
 )
 
 // Phase-4 tests share fakeCard/scriptEntry/mustHex with discover_test.go.

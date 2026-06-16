@@ -40,7 +40,7 @@ package c2c
 import (
 	"fmt"
 
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
 )
 
 // phasePresentToVerifier runs MSE SET DST + PSO VERIFY CERTIFICATE for each

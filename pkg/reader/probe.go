@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/christhomas/card-reader/pkg/reader/generic"
-	"github.com/christhomas/card-reader/pkg/reader/usb"
+	"github.com/antimatter-studios/egk-card-reader/pkg/reader/generic"
+	"github.com/antimatter-studios/egk-card-reader/pkg/reader/usb"
 )
 
 // ORGAUSBVendorID / ORGAUSBProductID identify the ORGA 9xx terminal family
