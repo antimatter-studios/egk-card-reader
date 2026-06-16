@@ -1,8 +1,10 @@
 package reader
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/christhomas/card-reader/pkg/reader/generic"
 	"github.com/christhomas/card-reader/pkg/reader/orga"
@@ -145,8 +147,10 @@ func (w *Watcher) Present(slot int) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		// 1 = present-inactive, 3 = present-active; 0 = no card.
-		return st == 1 || st == 3, nil
+		// CT-BCS ICC status: bit0 (0x01) = card present. Higher bits vary by
+		// firmware (ORGA 930 M reports 1/3; ORGA 930 care reports 5 = bit0+bit2),
+		// so test the present bit rather than exact values. 0 = no card.
+		return st&0x01 != 0, nil
 	case "pcsc":
 		name, present, err := w.gr.Present()
 		if err != nil {
@@ -240,7 +244,39 @@ func orgaDeviceInfo(dev usb.Device, t *orga.Terminal) DeviceInfo {
 	if t != nil {
 		if fw, err := t.TerminalInfo(); err == nil {
 			info.FirmwareInfo = summarizeTerminalInfo(fw)
+			// The terminal self-reports its real model (e.g. "ORGA 930 care") in
+			// GET STATUS; prefer it over the USB iProduct, which can read as a
+			// generic "ORGA 900 ... RTM" and misidentify the device.
+			if model := parseORGAModel(fw); model != "" {
+				info.Product = model
+			}
 		}
 	}
 	return info
+}
+
+// parseORGAModel extracts the friendly terminal model (e.g. "ORGA 930 care")
+// from the CT-BCS GET STATUS FH payload. Returns "" if not present. The run is
+// taken from "ORGA" up to a control byte or a 2+ space padding boundary.
+func parseORGAModel(b []byte) string {
+	i := bytes.Index(b, []byte("ORGA"))
+	if i < 0 {
+		return ""
+	}
+	end, spaces := i, 0
+	for end < len(b) {
+		c := b[end]
+		if c < 0x20 || c > 0x7e {
+			break
+		}
+		if c == ' ' {
+			if spaces++; spaces >= 2 {
+				break
+			}
+		} else {
+			spaces = 0
+		}
+		end++
+	}
+	return strings.TrimSpace(string(b[i:end]))
 }
