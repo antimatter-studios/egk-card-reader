@@ -11,6 +11,37 @@ extracts the section matching the pushed tag (with the leading `v` stripped — 
 release body. A tag with no matching section will fail the release job — every
 release must have an entry below.
 
+## [1.2.0] — 2026-06-18
+
+### Changed
+
+- **Module path renamed** to `github.com/antimatter-studios/egk-card-reader`
+  (was `github.com/christhomas/card-reader`) so the module path matches the
+  GitHub repo and is `go get`-able. Consumers must update their import paths.
+- **Public API surface** — `egk`, `reader`, `document`, `ktda`, and `output`
+  moved from `internal/` to `pkg/` so external modules (e.g. inpace) can
+  import them directly. `c2c` stays internal. Imports across `cmd/` and the
+  docs/markdown references were repointed at the new `pkg/` paths.
+
+### Added
+
+- `reader.Watcher` (`OpenWatcher` / `Present` / `Acquire` / `Release` /
+  `Close`) — holds a reader open across presence polls for long-running
+  consumers instead of re-opening the device on every read.
+- `generic.Reader.Present` — non-blocking PC/SC card-presence poll; the ORGA
+  path reuses `Terminal.SlotStatus`. A shared `orgaDeviceInfo` helper now
+  backs both `orgaSession.Identify` and the watcher.
+
+### Fixed
+
+- ORGA card-presence detection — the watcher accepted only CT-BCS SlotStatus
+  `0x01`, so an ORGA 930 care (which reports `0x05`: card-present bit0 +
+  bit2) read as "no card". Presence now tests bit0, robust across ORGA
+  930 M (`0x01`) and 930 care (`0x05`).
+- `DeviceInfo.Product` now prefers the terminal's self-reported model from
+  GET STATUS (e.g. "ORGA 930 care") over the generic USB `iProduct` string
+  (`parseORGAModel`).
+
 ## [1.1.0] — 2026-05-11
 
 ### Added
