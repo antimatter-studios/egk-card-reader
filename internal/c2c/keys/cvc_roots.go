@@ -4,7 +4,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
 )
 
 // CVC-Root trust anchors for the gematik card-verifiable-certificate PKI.

@@ -15,11 +15,11 @@ without a vendor driver:
   CDC-ACM serial endpoint at 9600 8N1. No proprietary wrapper.
 - USB identity is matched by VID `0x0780` / PID `0x1202` (the "ORGA 900
   Smart Card Terminal Virtual Com Port" family, which covers the
-  930 M) — see [`internal/reader/usb/`](../../internal/reader/usb/) and
+  930 M) — see [`pkg/reader/usb/`](../../pkg/reader/usb/) and
   [../orga-driver/01-hardware.md](../orga-driver/01-hardware.md).
-- Go transport: ~250 LoC across `internal/reader/orga/{orga,exchange,
+- Go transport: ~250 LoC across `pkg/reader/orga/{orga,exchange,
   transport,ctbcs,safety,serial_darwin}.go` plus a cross-OS USB probe
-  in `internal/reader/usb/{darwin,linux,windows,other}.go`.
+  in `pkg/reader/usb/{darwin,linux,windows,other}.go`.
 
 What was previously documented (Worldline/Ingenico's
 "Windows-only driver required" claim) turned out to be misleading. The
@@ -70,7 +70,7 @@ PIN provenance, structure, and counter math: see
 [pin-workflow.md](pin-workflow.md).
 
 In code: any APDU with `INS=0x20` (VERIFY) on any non-CT-BCS CLA is
-refused by [`internal/reader/orga/safety.go`](../../internal/reader/orga/safety.go)
+refused by [`pkg/reader/orga/safety.go`](../../pkg/reader/orga/safety.go)
 unless `Options.AllowPINWrite` is set (or `-UNSAFE-allow-pin-write` is
 passed to `orga-probe`). This is because every wrong VERIFY decrements
 the on-card retry counter, three strikes locks the PIN, and the counter

@@ -11,6 +11,37 @@ extracts the section matching the pushed tag (with the leading `v` stripped — 
 release body. A tag with no matching section will fail the release job — every
 release must have an entry below.
 
+## [1.2.0] — 2026-06-18
+
+### Changed
+
+- **Module path renamed** to `github.com/antimatter-studios/egk-card-reader`
+  (was `github.com/christhomas/card-reader`) so the module path matches the
+  GitHub repo and is `go get`-able. Consumers must update their import paths.
+- **Public API surface** — `egk`, `reader`, `document`, `ktda`, and `output`
+  moved from `internal/` to `pkg/` so external modules (e.g. inpace) can
+  import them directly. `c2c` stays internal. Imports across `cmd/` and the
+  docs/markdown references were repointed at the new `pkg/` paths.
+
+### Added
+
+- `reader.Watcher` (`OpenWatcher` / `Present` / `Acquire` / `Release` /
+  `Close`) — holds a reader open across presence polls for long-running
+  consumers instead of re-opening the device on every read.
+- `generic.Reader.Present` — non-blocking PC/SC card-presence poll; the ORGA
+  path reuses `Terminal.SlotStatus`. A shared `orgaDeviceInfo` helper now
+  backs both `orgaSession.Identify` and the watcher.
+
+### Fixed
+
+- ORGA card-presence detection — the watcher accepted only CT-BCS SlotStatus
+  `0x01`, so an ORGA 930 care (which reports `0x05`: card-present bit0 +
+  bit2) read as "no card". Presence now tests bit0, robust across ORGA
+  930 M (`0x01`) and 930 care (`0x05`).
+- `DeviceInfo.Product` now prefers the terminal's self-reported model from
+  GET STATUS (e.g. "ORGA 930 care") over the generic USB `iProduct` string
+  (`parseORGAModel`).
+
 ## [1.1.0] — 2026-05-11
 
 ### Added
@@ -23,7 +54,7 @@ release must have an entry below.
   Secure Messaging session-key derivation. Crypto and APDU sequencing are
   complete; end-to-end execution is gated on hardware availability (live
   SMC-B + cardholder PIN + production gematik CV-certs).
-- USB descriptor probe subpackage (`internal/reader/usb`) — replaces the
+- USB descriptor probe subpackage (`pkg/reader/usb`) — replaces the
   best-effort `/dev/cu.usbmodem*` glob with VID/PID matching. darwin
   backend via `ioreg`, linux via `/sys/bus/usb`, windows stub. Returns
   full descriptor metadata (manufacturer, product, serial, device path).
@@ -67,16 +98,16 @@ release must have an entry below.
 
 ### Tests
 
-- New ORGA mock-serial infrastructure (`internal/reader/orga/mock_test.go`)
+- New ORGA mock-serial infrastructure (`pkg/reader/orga/mock_test.go`)
   — scriptable `fakeSerialIO` plus `chunkedReader` / `errAfterReader` /
   `errCloser` helpers — enables hardware-free testing of the T=1
   transport, CT-BCS commands, and exchange state machine.
-- `internal/reader/orga`: 9.8 % → 83.6 % coverage.
-- `internal/reader`: 15.0 % → 62.1 % (factory routing, probe helpers,
+- `pkg/reader/orga`: 9.8 % → 83.6 % coverage.
+- `pkg/reader`: 15.0 % → 62.1 % (factory routing, probe helpers,
   DeviceInfo formatting, session delegators).
 - `internal/c2c`: 77.1 % → 83.8 % (handshake error branches, getters,
   Phase.String fallback).
-- `internal/egk`: 80.0 % → 83.9 % (`certFields` + DF.ESIGN diagnostic
+- `pkg/egk`: 80.0 % → 83.9 % (`certFields` + DF.ESIGN diagnostic
   rows).
 - Overall statement coverage: 66.3 % → 73.6 %.
 - Remaining gaps are hardware-bound entry points (`orga.Open`,

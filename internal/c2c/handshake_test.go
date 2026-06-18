@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
-	"github.com/christhomas/card-reader/internal/c2c/keys"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/keys"
 )
 
 func TestNew_RequiresBothCards(t *testing.T) {

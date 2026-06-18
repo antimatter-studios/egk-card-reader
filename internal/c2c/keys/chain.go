@@ -11,8 +11,8 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/christhomas/card-reader/internal/c2c/brainpool"
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/brainpool"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
 )
 
 // VerifyChain walks chain[0] (leaf) → chain[1] → ... → chain[n-1] (closest

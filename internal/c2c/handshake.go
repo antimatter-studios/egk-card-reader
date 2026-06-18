@@ -29,9 +29,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
-	"github.com/christhomas/card-reader/internal/c2c/keys"
-	"github.com/christhomas/card-reader/internal/c2c/sm"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/keys"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/sm"
 )
 
 // Phase enumerates the discrete stages of the C2C handshake.

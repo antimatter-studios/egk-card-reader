@@ -1,4 +1,4 @@
-module github.com/christhomas/card-reader
+module github.com/antimatter-studios/egk-card-reader
 
 go 1.26.1
 

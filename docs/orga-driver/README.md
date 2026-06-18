@@ -27,7 +27,7 @@ The vendor's claim that ORGA 9xx needs a proprietary Windows-only driver is **mi
 See also (one level up):
 
 - [../c2c/](../c2c/) — the C2C handshake implementation and the four-walls model that drives this whole project's design
-- [../reader-architecture.md](../reader-architecture.md) — how this driver fits behind the `internal/reader` factory / Session / DeviceInfo abstractions
+- [../reader-architecture.md](../reader-architecture.md) — how this driver fits behind the `pkg/reader` factory / Session / DeviceInfo abstractions
 
 ## Goals
 

@@ -15,4 +15,4 @@
 # Card-reader output files — keep the directory, ignore its contents
 /output/*
 !/output/.gitkeep
-internal/reader/usb/testdata/ioreg_with_orga.txt
+pkg/reader/usb/testdata/ioreg_with_orga.txt

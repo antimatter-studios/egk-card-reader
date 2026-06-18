@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
 )
 
 // Card is the minimal APDU contract this package needs. It matches
-// internal/reader.Card and internal/egk.Card structurally — any of those
+// pkg/reader.Card and pkg/egk.Card structurally — any of those
 // satisfies it. We define it locally so c2c doesn't pull in the reader
 // package and create an import cycle if reader ever wants to call into c2c.
 type Card interface {

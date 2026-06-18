@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/christhomas/card-reader/internal/c2c/cvcert"
-	"github.com/christhomas/card-reader/internal/c2c/keys"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/cvcert"
+	"github.com/antimatter-studios/egk-card-reader/internal/c2c/keys"
 )
 
 // makeFakeCert builds a minimal *cvcert.Cert populated only with the fields

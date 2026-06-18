@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/christhomas/card-reader/internal/reader/orga"
+	"github.com/antimatter-studios/egk-card-reader/pkg/reader/orga"
 )
 
 // runReadCert: SELECT DF.ESIGN (or any AID), SELECT EF by FID, READ BINARY

@@ -9,11 +9,11 @@ interface added 2026-05-11.
 ```
 cmd/card-reader, cmd/orga-probe
             ↓
-internal/reader        ← Session + Card interfaces, factory, Probe
+pkg/reader        ← Session + Card interfaces, factory, Probe
             ↓
    ┌────────┴────────┐
    ↓                 ↓
-internal/reader/    internal/reader/
+pkg/reader/    pkg/reader/
   generic             orga
    ↓                 ↓
 PC/SC (CCID)        T=1 over CDC-ACM
@@ -24,7 +24,7 @@ REINER cyberJack,   (potentially other
 Identiv uTrust,     ORGA 9xx in the
 …                   future)
 
-                 internal/reader/usb
+                 pkg/reader/usb
                  ↓ ↓ ↓ ↓
                  darwin.go (ioreg)
                  linux.go  (sysfs)
@@ -43,19 +43,19 @@ T=1 directly, and the T=1 framing the ORGA uses is plain ISO 7816-3
 
 After the refactor:
 
-- **`internal/reader.Card`** is the minimal contract every driver
+- **`pkg/reader.Card`** is the minimal contract every driver
   implements — one method, `Transmit(apdu []byte) ([]byte, error)`.
-- **`internal/reader.Session`** is the multi-slot handle returned by
+- **`pkg/reader.Session`** is the multi-slot handle returned by
   the factory: `Slot(n) → Card`, `Identify() → DeviceInfo`,
   `Kind() → string`, `Close()`.
-- Both [`internal/reader/orga.Slot`](../internal/reader/orga/) and
-  [`internal/reader/generic.Card`](../internal/reader/generic/) satisfy
-  `Card` structurally; the eGK reader code in `internal/egk` doesn't
+- Both [`pkg/reader/orga.Slot`](../pkg/reader/orga/) and
+  [`pkg/reader/generic.Card`](../pkg/reader/generic/) satisfy
+  `Card` structurally; the eGK reader code in `pkg/egk` doesn't
   know which is underneath.
 
 ## Factory and probe
 
-[`internal/reader.Detect()`](../internal/reader/probe.go) returns a
+[`pkg/reader.Detect()`](../pkg/reader/probe.go) returns a
 `*Probe` snapshot of available hardware:
 
 ```go
@@ -83,10 +83,10 @@ CDC-ACM modem — requires OS-specific code:
 
 | OS       | Implementation                                  | File |
 |----------|-------------------------------------------------|------|
-| macOS    | Parse `ioreg -r -c IOUSBHostDevice -l -w0`      | `internal/reader/usb/darwin.go` |
-| Linux    | Read `/sys/bus/usb/devices/<bus>-<port>/`       | `internal/reader/usb/linux.go` |
-| Windows  | Stub returning `ErrUnsupported` (TODO SetupAPI) | `internal/reader/usb/windows.go` |
-| other    | Stub returning `ErrUnsupported`                 | `internal/reader/usb/other.go` |
+| macOS    | Parse `ioreg -r -c IOUSBHostDevice -l -w0`      | `pkg/reader/usb/darwin.go` |
+| Linux    | Read `/sys/bus/usb/devices/<bus>-<port>/`       | `pkg/reader/usb/linux.go` |
+| Windows  | Stub returning `ErrUnsupported` (TODO SetupAPI) | `pkg/reader/usb/windows.go` |
+| other    | Stub returning `ErrUnsupported`                 | `pkg/reader/usb/other.go` |
 
 Build tags select the right implementation at compile time. All four
 files share the same `Probe` interface:
@@ -145,8 +145,8 @@ would drive the terminal pinpad.
 
 The PC/SC driver doesn't currently mirror this guard. If a future use
 case routes VERIFY through PC/SC, the same `dangerousISO` filter from
-[`internal/reader/orga/safety.go`](../internal/reader/orga/safety.go)
-should be promoted to a shared `internal/reader/safety/` package.
+[`pkg/reader/orga/safety.go`](../pkg/reader/orga/safety.go)
+should be promoted to a shared `pkg/reader/safety/` package.
 
 ## ORGA-specific debugging
 

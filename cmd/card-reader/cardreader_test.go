@@ -11,8 +11,8 @@ import (
 
 	"github.com/ebfe/scard"
 
-	"github.com/christhomas/card-reader/internal/document"
-	"github.com/christhomas/card-reader/internal/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/document"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
 )
 
 func TestSuggestBaseName(t *testing.T) {
@@ -235,7 +235,7 @@ func TestReadCmdRunFileMode(t *testing.T) {
 // ---- PC/SC fake + waitForCard / runDebug tests ---------------------------
 
 // fakeCtx implements pcscContext with scripted responses, mirroring the
-// scripted-response model used by fakeCard in internal/egk/apdu_test.go.
+// scripted-response model used by fakeCard in pkg/egk/apdu_test.go.
 //
 // Each call to GetStatusChange consumes one entry from statusScript: the
 // per-reader EventState bits are applied to the supplied []ReaderState, and

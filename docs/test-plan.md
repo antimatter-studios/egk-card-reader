@@ -1,6 +1,6 @@
 # Unit-test plan
 
-Baseline coverage (initial run, only the existing round-trip tests in `internal/document`): **28.4 %** overall.
+Baseline coverage (initial run, only the existing round-trip tests in `pkg/document`): **28.4 %** overall.
 Target: **≥ 90 %** for everything except the irreducibly external boundaries (PC/SC, the live GKV-Datenaustausch HTTP index, `os.Exit`).
 
 **Achieved**: **87.1 %** overall, **96–100 %** on every `internal/*` package. The shortfall on the global number is the deliberate PC/SC integration glue in the `cmd/*` binaries; see the per-package table below.
@@ -9,10 +9,10 @@ Target: **≥ 90 %** for everything except the irreducibly external boundaries (
 
 | Package | Coverage | Notes |
 | --- | --- | --- |
-| `internal/output` | **100.0 %** | |
-| `internal/document` | **96.5 %** | gaps are: error branches in `encodeGDT6301` and `ParseGDT` that are exercised by the round-trip but not the individual error helpers — accept as-is |
-| `internal/egk` | **95.9 %** | gaps in `Read`/`readEFCombined` are the FID-fallback after the SFI-empty path; exercised at the function level but not byte-for-byte |
-| `internal/ktda` | **95.7 %** | gaps in `Parse` are early `nil`-return guards; `downloadOne` `io.Copy` failure path skipped (hard to trigger reliably) |
+| `pkg/output` | **100.0 %** | |
+| `pkg/document` | **96.5 %** | gaps are: error branches in `encodeGDT6301` and `ParseGDT` that are exercised by the round-trip but not the individual error helpers — accept as-is |
+| `pkg/egk` | **95.9 %** | gaps in `Read`/`readEFCombined` are the FID-fallback after the SFI-empty path; exercised at the function level but not byte-for-byte |
+| `pkg/ktda` | **95.7 %** | gaps in `Parse` are early `nil`-return guards; `downloadOne` `io.Copy` failure path skipped (hard to trigger reliably) |
 | `cmd/card-reader` | **68.8 %** | uncovered: `setupCardReader`, `waitForCard`, `runDebug`, the cardreader branch of `loadCardData`/`Run`, `main()`. All PC/SC integration — see **Accepting deliberate gaps** below |
 | `cmd/card-probe` | **22.6 %** | uncovered: `main`, `probeReader`, `transmit`, `die`. Pure PC/SC probe utility; only the three pure helpers (`h`, `parseICCSN`, `guessFromATR`) are unit-tested |
 
@@ -28,16 +28,16 @@ No production code edits anywhere in this plan until each blocker has been signe
 
 | Package | Files | Testable now | Blocked (and why) |
 | --- | --- | --- | --- |
-| `internal/egk` | `parse.go`, `form.go` | `FormatDate`, `FormatGender`, `FormatInsuredType`, `FormatCountry`, `xmlCharsetReader`, `unmarshalXML`, `gunzip`, `ParsePD`, `ParseVD`, `FormField.Filled`, `FormMapping`, `explainInsuredType`, `explainWOP`, `vknrValue/Source/Note`, `ktgValue/Source/Note`, `ktabFromIKInfo`, `ktabSource`, `ktabNote`, `copayNote` | `apdu.go` and `egk.go::Read`/`readEFCombined` — see **Blocker A** |
-| `internal/ktda` | `store.go`, `ke0.go`, `fetch.go` | All of `store.go`, all of `ke0.go`, `KassenartFromFilename`, `Download`, `downloadOne` (via `httptest.NewServer`) | `DiscoverFiles` — see **Blocker B** |
-| `internal/document` | already has 4 test files | All encoders, all parsers, all three table renderers, `captureBytes`, `billingIK`, `billingName`, helpers (`hl7Escape`, `hl7Unescape`, `gdtDate`, `gdtSex`, etc.) | None |
-| `internal/output` | `output.go` | `File.Write`, `Multi.Write`, `Stdout.Write` (via `os.Pipe` redirect) | None |
+| `pkg/egk` | `parse.go`, `form.go` | `FormatDate`, `FormatGender`, `FormatInsuredType`, `FormatCountry`, `xmlCharsetReader`, `unmarshalXML`, `gunzip`, `ParsePD`, `ParseVD`, `FormField.Filled`, `FormMapping`, `explainInsuredType`, `explainWOP`, `vknrValue/Source/Note`, `ktgValue/Source/Note`, `ktabFromIKInfo`, `ktabSource`, `ktabNote`, `copayNote` | `apdu.go` and `egk.go::Read`/`readEFCombined` — see **Blocker A** |
+| `pkg/ktda` | `store.go`, `ke0.go`, `fetch.go` | All of `store.go`, all of `ke0.go`, `KassenartFromFilename`, `Download`, `downloadOne` (via `httptest.NewServer`) | `DiscoverFiles` — see **Blocker B** |
+| `pkg/document` | already has 4 test files | All encoders, all parsers, all three table renderers, `captureBytes`, `billingIK`, `billingName`, helpers (`hl7Escape`, `hl7Unescape`, `gdtDate`, `gdtSex`, etc.) | None |
+| `pkg/output` | `output.go` | `File.Write`, `Multi.Write`, `Stdout.Write` (via `os.Pipe` redirect) | None |
 | `cmd/card-reader` | `cli.go`, `render.go`, `glossary.go`, `ktda_cmd.go`, `cardreader.go` | `outputForPath`, `encoderKey`, `ReadCmd.Validate`, `wrap`, `chrome`, `renderForm`, `renderTable`, `renderGlossary`, `glossaryTable`, `suggestBaseName`, `decodeState`, `defaultKTDAPath`, `resolveIK`, `warnIfStale`, `orDash`, `loadCardData` (file branch only), `KtdaLookupCmd.Run`, `KtdaInfoCmd.Run` (against a temp ktda.json) | `setupCardReader`, `waitForCard`, `runDebug`, `ReadCmd.Run` (cardreader path), `KtdaUpdateCmd.Run`, `runKTDAUpdate`, `ensureKTDA` auto-fetch — see **Blocker A**, **Blocker B** |
 | `cmd/card-probe` | `main.go` | `h`, `parseICCSN`, `guessFromATR` | `main`, `probeReader`, `transmit`, `die` — see **Blocker A**, **Blocker C** |
 
 ## What gets tested where (testable-now items)
 
-### `internal/egk/parse.go`
+### `pkg/egk/parse.go`
 - `FormatDate`: `"19720314" → "1972-03-14"`, `"" → ""`, `"abc" → "abc"` (non-numeric short-circuit), 7-digit → unchanged.
 - `FormatGender`: M/W/F/X/D/empty/unknown.
 - `FormatInsuredType`: 1/3/5/empty/other.
@@ -48,12 +48,12 @@ No production code edits anywhere in this plan until each blocker has been signe
 - `ParsePD`: encode a `PersonalData` struct, gzip it, prepend the 2-byte length, parse back. Error path: short buffer, length-exceeds-buffer, bad gzip, malformed XML.
 - `ParseVD`: encode an `InsuranceData` + `ProtectedData`, build the 8-byte offset header + two gzipped sections, parse back. Error paths: short header, no GVD section (gvdStart=0), bad gzip in AVD, malformed AVD XML, bad gzip in GVD (silently dropped).
 
-### `internal/egk/form.go`
+### `pkg/egk/form.go`
 - `FormField.Filled`: with empty / whitespace / real value.
 - `FormMapping`: with full `CardData` + `IKInfo`, with `nil` IKInfo, with empty `Personal`/`Insurance`/`Protected`, with `BesondereGruppe`/`DMP` blank (defaults to "00"), with `AbrechnenderKostentraeger` missing (falls back to issuing IK), with `ZuzahlungStatus="1"` (copay date set) and "0" / "".
 - Each helper (`explainInsuredType`, `explainWOP`, `vknrValue/Source/Note`, `ktgValue/Source/Note`, `ktabFromIKInfo/Source/Note`, `copayNote`) tested with the full code matrix.
 
-### `internal/ktda/store.go`
+### `pkg/ktda/store.go`
 - `Compile`: merge two slices, dedupe-by-IK with `bestOf` rules — verify VKNR-preferred wins, then later-ValidFrom wins.
 - `bestOf` (called via `Compile` table-driven cases).
 - `Save` + `Load` + `ReadStore`: round-trip a fixture `Store` via `t.TempDir()`.
@@ -62,18 +62,18 @@ No production code edits anywhere in this plan until each blocker has been signe
 - `Stats`: nil store, empty store, store with mixed VKNRs.
 - `SortedIKs`: stable order, nil receiver.
 
-### `internal/ktda/ke0.go`
+### `pkg/ktda/ke0.go`
 - `Parse`: hand-crafted minimal KE0 byte stream with UNH+IDK+VDT+NAM+VKG+UNT → one `Entry` with all fields populated. Plus: multiple messages, message without UNT (final flush), UNT before UNH (no-op), embedded CR/LF inside segments, `?+` release escape.
 - `splitEDIFACT`: covered indirectly + a direct table-driven test for the release-character behaviour.
 - `handleSegment`: covered via `Parse`; one direct test for `IDK`-before-UNH (creates entry).
 - `ParseError.Error`: string format.
 
-### `internal/ktda/fetch.go`
+### `pkg/ktda/fetch.go`
 - `KassenartFromFilename`: AO/EK/BK/IK/BN/LK + lowercase + short string + full path.
 - `Download`: spin up `httptest.NewServer`, return small bodies; assert atomic `.tmp` rename, file content matches, returned paths are correct, 404 returns an error.
 - `downloadOne`: same server; test crash-recovery by injecting a `io.Writer` failure (need source change — see **Blocker B**; deferred to optional).
 
-### `internal/document` (gaps in existing tests)
+### `pkg/document` (gaps in existing tests)
 - `gdt.go` direct helpers: `gdtLine` (ISO-8859-15 length math against German umlauts), `gdtDate` (valid / invalid / short / non-numeric), `gdtSex`, `gdtVKNR` (nil / set).
 - `hl7v2.go` direct helpers: `hl7Escape` (each of the five delimiters individually + combinations + empty), `hl7Name` (truncation of trailing empty parts), `hl7Address` (with/without `AddressSuffix` and `HouseNumber`), `hl7Sex`, `hl7VKNR`, `condDate`, `segment`.
 - `hl7v2_parse.go` direct helpers: `fieldAt`, `compAt`, `firstRep`, `splitComps`, `hl7Unescape` (each escape sequence, unknown `\Xxx\` pass-through, malformed missing-trailing-escape, non-default delimiters), `parseHL7Sex`, `condDateValue`.
@@ -85,7 +85,7 @@ No production code edits anywhere in this plan until each blocker has been signe
 - `hl7v2_table.go::RenderHL7ADT`: smoke + with `nil` data.
 - `json.go::formMappingJSON.Encode`: produces valid JSON array of 21 rows matching `FormMapping`.
 
-### `internal/output`
+### `pkg/output`
 - `File.Write`: writes the bytes under `t.TempDir()`, basename + extension are honoured, mkdir is implicit, contents match.
 - `Stdout.Write`: redirect `os.Stdout` to a pipe, write a doc, verify bytes.
 - `Multi.Write`: a real `File` writer + an in-memory `Writer` (defined in the test file) — both get the same bytes; a failing inner writer aborts the chain.
@@ -116,21 +116,21 @@ No production code edits anywhere in this plan until each blocker has been signe
 
 ### Blocker A — `*scard.Card` was a concrete type, not an interface [APPLIED]
 
-**Was affected:** `internal/egk/apdu.go` (`transmit`, `selectMF`, `selectByAID`, `selectEF`, `readBinary`, `readEFBySFI`), `internal/egk/egk.go` (`Read`, `readEFCombined`).
+**Was affected:** `pkg/egk/apdu.go` (`transmit`, `selectMF`, `selectByAID`, `selectEF`, `readBinary`, `readEFBySFI`), `pkg/egk/egk.go` (`Read`, `readEFCombined`).
 
-**Fix:** added [internal/egk/card.go](../internal/egk/card.go) — a 5-line `Card` interface with `Transmit([]byte) ([]byte, error)`. Swapped every `*scard.Card` parameter to `Card`. `*scard.Card` satisfies the interface structurally; zero call-site changes outside `internal/egk`.
+**Fix:** added [pkg/egk/card.go](../pkg/egk/card.go) — a 5-line `Card` interface with `Transmit([]byte) ([]byte, error)`. Swapped every `*scard.Card` parameter to `Card`. `*scard.Card` satisfies the interface structurally; zero call-site changes outside `pkg/egk`.
 
-**Result:** `internal/egk` went from 0 % to 95.9 %.
+**Result:** `pkg/egk` went from 0 % to 95.9 %.
 
 **Not changed:** no equivalent interface for `*scard.Context` — that would only help `cmd/card-reader/cardreader.go::setupCardReader`/`waitForCard`/`runDebug`, which are PC/SC integration territory and stay uncovered by design. Similarly nothing in `cmd/card-probe` was touched.
 
 ### Blocker B — `ktda.DiscoverFiles` hardcoded the index URL [APPLIED]
 
-**Was affected:** `internal/ktda/fetch.go::DiscoverFiles`.
+**Was affected:** `pkg/ktda/fetch.go::DiscoverFiles`.
 
-**Fix:** `IndexURL` and `baseHost` in [internal/ktda/fetch.go](../internal/ktda/fetch.go) changed from `const` to `var`. Tests in [internal/ktda/fetch_test.go](../internal/ktda/fetch_test.go) swap them to `httptest.NewServer().URL` for the duration of each test.
+**Fix:** `IndexURL` and `baseHost` in [pkg/ktda/fetch.go](../pkg/ktda/fetch.go) changed from `const` to `var`. Tests in [pkg/ktda/fetch_test.go](../pkg/ktda/fetch_test.go) swap them to `httptest.NewServer().URL` for the duration of each test.
 
-**Result:** `internal/ktda` went from 0 % to 95.7 %.
+**Result:** `pkg/ktda` went from 0 % to 95.7 %.
 
 ### Blocker C — `cmd/card-probe/main.go::die` calls `os.Exit` [SKIPPED, AS RECOMMENDED]
 

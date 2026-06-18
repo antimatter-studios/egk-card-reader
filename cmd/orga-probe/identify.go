@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/christhomas/card-reader/internal/reader/orga"
+	"github.com/antimatter-studios/egk-card-reader/pkg/reader/orga"
 )
 
 // knownEF is one EF we probe at the MF level. Each card type uses a specific

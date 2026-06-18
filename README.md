@@ -18,7 +18,7 @@ This repository additionally includes a complete implementation of the **gemSpec
 - **A real CCID smart-card reader** (USB), OR an **Ingenico/Worldline ORGA 9xx** terminal. Generic SD/MMC readers are *not* smart-card readers — even if macOS shows them via PC/SC they cannot power the eGK chip. If your card status reads `PRESENT|MUTE` with an empty ATR, that's the symptom.
 - **macOS**: PC/SC is built in; ORGA works out of the box via the kernel's `AppleUSBCDCACM` driver — no extra installation.
 - **Linux**: `sudo apt install pcscd pcsc-tools libpcsclite-dev` and `sudo systemctl start pcscd` for the PC/SC path; ORGA uses `/sys/bus/usb/devices` directly (no extra package).
-- **Windows**: PC/SC built in. ORGA support is currently a stub (TODO: SetupAPI / WMI enumeration — see [internal/reader/usb/windows.go](internal/reader/usb/windows.go)).
+- **Windows**: PC/SC built in. ORGA support is currently a stub (TODO: SetupAPI / WMI enumeration — see [pkg/reader/usb/windows.go](pkg/reader/usb/windows.go)).
 - File-input mode (`--input <path>`) does not need a reader.
 
 ## Build
@@ -62,37 +62,37 @@ The "ORGA / PC/SC (autodetect)" box hides a small abstraction:
 ```
 cmd/card-reader, cmd/orga-probe
             ↓
-internal/reader    ← Session + Card interfaces, Probe factory, DeviceInfo
+pkg/reader    ← Session + Card interfaces, Probe factory, DeviceInfo
             ↓
    ┌────────┴────────┐
    ↓                 ↓
-internal/reader/    internal/reader/
+pkg/reader/    pkg/reader/
   generic             orga
    ↓                 ↓
 PC/SC (CCID)        T=1 over CDC-ACM
 ebfe/scard          (own implementation, ~250 LoC)
    ↓                 ↓                ↓
-Cherry, OMNIKEY,    ORGA 930 M ──→  internal/reader/usb
+Cherry, OMNIKEY,    ORGA 930 M ──→  pkg/reader/usb
 REINER cyberJack,                     (darwin: ioreg,
 Identiv uTrust, …                      linux:  /sys/bus/usb,
                                        windows: stub)
 ```
 
-- `internal/reader.Card` is the minimal contract — `Transmit(apdu []byte) ([]byte, error)`. Both `*orga.Slot` and `*generic.Card` satisfy it structurally; the eGK reader code in `internal/egk` doesn't know which is underneath.
-- `reader.Detect()` probes the system (USB VID/PID match for ORGA via the OS-specific `internal/reader/usb/` layer, then PC/SC daemon listing) and returns the best-priority driver.
+- `pkg/reader.Card` is the minimal contract — `Transmit(apdu []byte) ([]byte, error)`. Both `*orga.Slot` and `*generic.Card` satisfy it structurally; the eGK reader code in `pkg/egk` doesn't know which is underneath.
+- `reader.Detect()` probes the system (USB VID/PID match for ORGA via the OS-specific `pkg/reader/usb/` layer, then PC/SC daemon listing) and returns the best-priority driver.
 - `Session.Identify() DeviceInfo` returns manufacturer / product / serial / device path / VID-PID / firmware / selection reason — every read prints these to stderr so you can see which device was chosen and why.
 
 Full architecture write-up: [docs/reader-architecture.md](docs/reader-architecture.md).
 
-1. **Acquire** — read live over PC/SC, or parse a previously written `.gdt` / `.hl7` / `.fhir.json`. Both paths land in the same internal `CardData` shape (see [internal/egk/egk.go](internal/egk/egk.go)).
+1. **Acquire** — read live over PC/SC, or parse a previously written `.gdt` / `.hl7` / `.fhir.json`. Both paths land in the same internal `CardData` shape (see [pkg/egk/egk.go](pkg/egk/egk.go)).
 2. **Enrich** — the eGK carries the insurer's `IKNR` and display name, but not the `VKNR`, `Kassenart`, or `Kostenträgergruppe` that German practice-management forms demand. Those come from `ktda.json`, a compiled lookup table derived from six quarterly KE0 files (see [KTDA — the insurer lookup table](#ktda--the-insurer-lookup-table)).
 3. **Render** — the same `CardData + IKInfo` is fed to one of five encoders (`form`, `gdt`, `hl7-fhir`, `hl7-adt`, `json`). Output goes to a styled lipgloss "comprehension" table on stdout (verify what was parsed), or to `./output/patient-<KVNR>-<timestamp>.<ext>` as raw bytes.
 
-The `Encoder` and `Writer` interfaces ([internal/document/document.go](internal/document/document.go), [internal/output/output.go](internal/output/output.go)) keep *what* the document looks like decoupled from *where* it goes — adding a new format is one Encoder and one registry line.
+The `Encoder` and `Writer` interfaces ([pkg/document/document.go](pkg/document/document.go), [pkg/output/output.go](pkg/output/output.go)) keep *what* the document looks like decoupled from *where* it goes — adding a new format is one Encoder and one registry line.
 
 ## How the eGK read pipeline works
 
-The eGK is a Java-Card chip card. The `internal/egk` package talks to it via raw ISO 7816-4 APDUs over whichever transport the reader factory picked (PC/SC or ORGA T=1).
+The eGK is a Java-Card chip card. The `pkg/egk` package talks to it via raw ISO 7816-4 APDUs over whichever transport the reader factory picked (PC/SC or ORGA T=1).
 
 ```
 PC/SC → SELECT MF (3F00, optional)
@@ -126,20 +126,20 @@ PC/SC → SELECT MF (3F00, optional)
 
 What each layer is for:
 
-- **APDUs** ([internal/egk/apdu.go](internal/egk/apdu.go)) — ISO 7816-4 commands. `SELECT AID` switches into the Health Card Application; `READ BINARY` pulls the file body. The reader prefers SFI-based access (one APDU = SELECT + READ in a single shot) and only falls back to FID-based `SELECT EF` when SFI fails. SFI mode caps the file offset at 255, so once the read passes that boundary the implementation drops back to plain READ BINARY against the implicit current EF (see [internal/egk/apdu.go:180-211](internal/egk/apdu.go#L180-L211)).
-- **Files** ([internal/egk/egk.go](internal/egk/egk.go)) — only two are read, both unprotected by PIN:
+- **APDUs** ([pkg/egk/apdu.go](pkg/egk/apdu.go)) — ISO 7816-4 commands. `SELECT AID` switches into the Health Card Application; `READ BINARY` pulls the file body. The reader prefers SFI-based access (one APDU = SELECT + READ in a single shot) and only falls back to FID-based `SELECT EF` when SFI fails. SFI mode caps the file offset at 255, so once the read passes that boundary the implementation drops back to plain READ BINARY against the implicit current EF (see [pkg/egk/apdu.go:180-211](pkg/egk/apdu.go#L180-L211)).
+- **Files** ([pkg/egk/egk.go](pkg/egk/egk.go)) — only two are read, both unprotected by PIN:
   - `EF.PD` (`2F01`) — *Persönliche Versichertendaten* — name, DOB, gender, address.
   - `EF.VD` (`2F02`) — packs *AVD* (Allgemeine Versicherungsdaten) + *GVD* (Geschützte Versichertendaten). The first 8 bytes are four big-endian pointers (`AVD-start, AVD-end, GVD-start, GVD-end`) into the rest of the file; each section is independently gzipped XML.
-- **Decompress + parse** ([internal/egk/parse.go](internal/egk/parse.go)) — gunzip, then `encoding/xml` with a `CharsetReader` that resolves `ISO-8859-15` (the gematik-declared charset) via `golang.org/x/text/encoding/charmap`. The schemas are gematik `gemSpec_eGK_Fach` v5.2 — `UC_PersoenlicheVersichertendatenXML`, `UC_AllgemeineVersicherungsdatenXML`, `UC_GeschuetzteVersichertendatenXML`.
+- **Decompress + parse** ([pkg/egk/parse.go](pkg/egk/parse.go)) — gunzip, then `encoding/xml` with a `CharsetReader` that resolves `ISO-8859-15` (the gematik-declared charset) via `golang.org/x/text/encoding/charmap`. The schemas are gematik `gemSpec_eGK_Fach` v5.2 — `UC_PersoenlicheVersichertendatenXML`, `UC_AllgemeineVersicherungsdatenXML`, `UC_GeschuetzteVersichertendatenXML`.
 
 ### Additional reads beyond EF.PD / EF.VD
 
 Around the main public-data pipeline above, the reader also pulls four diagnostic / identification artefacts:
 
-- **EF.GDO at MF** ([internal/egk/mf.go](internal/egk/mf.go)) — 10-byte **ICCSN** (Integrated Circuit Card Serial Number, BER-TLV tag `5A`). Card identity, never PIN-protected. Surfaced as a `--glossary` diagnostic row.
-- **EF.Version2 at MF** ([internal/egk/mf.go](internal/egk/mf.go)) — G2 card version tags (chip type, object-system version, application versions). Useful for telling G2 cards apart from G1 in the same fleet.
-- **EF.StatusVD inside DF.HCA** ([internal/egk/status.go](internal/egk/status.go)) — insurance-data freshness markers (last-update timestamp, validity status). Surfaced alongside the parsed insurance data so practices can spot stale cards.
-- **DF.ESIGN cardholder X.509 certs** ([internal/egk/esign.go](internal/egk/esign.go)) — the two publicly readable cert slots: `FID C500` (RSA-2048 cardholder authentication) and `FID C504` (ECDSA on brainpoolP256r1 — Go stdlib doesn't decode the curve, so the parser falls back to a tolerant ASN.1 walk that pulls Subject / Issuer / Validity / signature-alg OID directly out of the TBSCertificate). The remaining `C500..C50F` slots are CV-certs gated by PIN / C2C and are deliberately skipped here.
+- **EF.GDO at MF** ([pkg/egk/mf.go](pkg/egk/mf.go)) — 10-byte **ICCSN** (Integrated Circuit Card Serial Number, BER-TLV tag `5A`). Card identity, never PIN-protected. Surfaced as a `--glossary` diagnostic row.
+- **EF.Version2 at MF** ([pkg/egk/mf.go](pkg/egk/mf.go)) — G2 card version tags (chip type, object-system version, application versions). Useful for telling G2 cards apart from G1 in the same fleet.
+- **EF.StatusVD inside DF.HCA** ([pkg/egk/status.go](pkg/egk/status.go)) — insurance-data freshness markers (last-update timestamp, validity status). Surfaced alongside the parsed insurance data so practices can spot stale cards.
+- **DF.ESIGN cardholder X.509 certs** ([pkg/egk/esign.go](pkg/egk/esign.go)) — the two publicly readable cert slots: `FID C500` (RSA-2048 cardholder authentication) and `FID C504` (ECDSA on brainpoolP256r1 — Go stdlib doesn't decode the curve, so the parser falls back to a tolerant ASN.1 walk that pulls Subject / Issuer / Validity / signature-alg OID directly out of the TBSCertificate). The remaining `C500..C50F` slots are CV-certs gated by PIN / C2C and are deliberately skipped here.
 
 All four are best-effort — a card that doesn't expose any of them just yields a `nil` field in `CardData`, and the rest of the read proceeds.
 
@@ -171,11 +171,11 @@ These come from the *Kostenträgerdatei*, a public dataset published quarterly b
 └──────────────┬──────────────┘
                │  HTTP GET (HTML scrape)
                ▼
-        DiscoverFiles()                  internal/ktda/fetch.go
+        DiscoverFiles()                  pkg/ktda/fetch.go
                │
                │  6 KE0 URLs (AO/EK/BK/IK/BN/LK + verfahren 05 + Qq + yy)
                ▼
-        Download(urls, dir)              internal/ktda/fetch.go
+        Download(urls, dir)              pkg/ktda/fetch.go
                │
                │  6× ISO-8859-1 EDIFACT-style binary segments
                ▼
@@ -189,7 +189,7 @@ These come from the *Kostenträgerdatei*, a public dataset published quarterly b
                │
                │  for each file: open, ISO-8859-1 decode, segment-split
                ▼
-        Parse(r, kassenart)              internal/ktda/ke0.go
+        Parse(r, kassenart)              pkg/ktda/ke0.go
                │
                │  one Entry per UNH...UNT message, populated from:
                │    IDK  → IK, ShortName, VKNR (if present)
@@ -201,7 +201,7 @@ These come from the *Kostenträgerdatei*, a public dataset published quarterly b
                │
                │  merge by IK; on conflict prefer "has VKNR" then later ValidFrom
                ▼
-        Compile(allEntries, sources)     internal/ktda/store.go
+        Compile(allEntries, sources)     pkg/ktda/store.go
                │
                ▼
         ktda-files/ktda.json
@@ -219,7 +219,7 @@ These come from the *Kostenträgerdatei*, a public dataset published quarterly b
 
 ### Web fetch — what `ktda update` actually does
 
-[internal/ktda/fetch.go](internal/ktda/fetch.go) is intentionally minimal — no HTML parser dependency:
+[pkg/ktda/fetch.go](pkg/ktda/fetch.go) is intentionally minimal — no HTML parser dependency:
 
 1. **`DiscoverFiles()`** — `GET https://www.gkv-datenaustausch.de/leistungserbringer/sonstige_leistungserbringer/kostentraegerdateien_sle/kostentraegerdateien.jsp`, then a regex pass over the body for `href="…\.ke0"`. Two regexes: one to pull every `.ke0` href out of the HTML, one to filter the basenames against `(AO|EK|BK|IK|BN|LK)\d{2}Q\d\d{2}\.ke0`. Hardcoded filenames would rot every quarter — scraping the index keeps the tool current as long as the page structure holds.
 2. **`Download(urls, dir)`** — sequential `GET`s into `ktda-files/raw/`, each via `<dst>.tmp` + atomic rename so a crashed download doesn't leave a half-file in place.
@@ -228,7 +228,7 @@ These come from the *Kostenträgerdatei*, a public dataset published quarterly b
 
 ### KE0 — what's in the wire format
 
-KE0 is UN/EDIFACT. Charset is ISO-8859-1. Segments end with `'` (apostrophe), fields are separated by `+`, sub-fields by `:`. A `?` is the EDIFACT release character — `?+` is a literal `+`. The parser at [internal/ktda/ke0.go](internal/ktda/ke0.go) handles only the segments we need:
+KE0 is UN/EDIFACT. Charset is ISO-8859-1. Segments end with `'` (apostrophe), fields are separated by `+`, sub-fields by `:`. A `?` is the EDIFACT release character — `?+` is a literal `+`. The parser at [pkg/ktda/ke0.go](pkg/ktda/ke0.go) handles only the segments we need:
 
 | Segment | Meaning | What the parser keeps |
 | --- | --- | --- |
@@ -277,7 +277,7 @@ Five static reference tables sit between raw card values and human-readable outp
 
 ### 1. Kassenart → Kostenträgergruppe (2-digit KBV form code)
 
-KBV Anlage 6 BMV-Ä. Hardcoded in [internal/ktda/store.go:108-124](internal/ktda/store.go#L108-L124):
+KBV Anlage 6 BMV-Ä. Hardcoded in [pkg/ktda/store.go:108-124](pkg/ktda/store.go#L108-L124):
 
 | Kassenart prefix | Family | Kostenträgergruppe |
 | --- | --- | --- |
@@ -292,11 +292,11 @@ The Kassenart itself comes from the KE0 filename prefix at parse time, so the ch
 
 ### 2. KTAB (Kostenträgerabrechnungsbereich)
 
-KBV catalogue `S_KTS_KTABRECHNUNGSBEREICH_V1.00`, 11 codes total. For any normal eGK the answer is **always `00` (Primärabrechnung)** — every other code applies to billing schemes that don't involve the eGK at all (BVG/BEG compensation cases, Schwangerschaftsabbruch, Sozialhilfe-Leistungserbringer, asylum-case billing, cross-border worker, etc.). Hardcoded in [internal/egk/form.go:215-225](internal/egk/form.go#L215-L225). The full 11-code reference table is rendered when `--glossary` is set ([cmd/card-reader/glossary.go](cmd/card-reader/glossary.go)).
+KBV catalogue `S_KTS_KTABRECHNUNGSBEREICH_V1.00`, 11 codes total. For any normal eGK the answer is **always `00` (Primärabrechnung)** — every other code applies to billing schemes that don't involve the eGK at all (BVG/BEG compensation cases, Schwangerschaftsabbruch, Sozialhilfe-Leistungserbringer, asylum-case billing, cross-border worker, etc.). Hardcoded in [pkg/egk/form.go:215-225](pkg/egk/form.go#L215-L225). The full 11-code reference table is rendered when `--glossary` is set ([cmd/card-reader/glossary.go](cmd/card-reader/glossary.go)).
 
 ### 3. WOP (Wohnortprinzip — KV region of residence)
 
-Two-digit KV-region code carried in `EF.AVD` and copied through to GDT field `4131` and to the FHIR `Coverage` extension. The 17 standard codes are listed in [internal/egk/form.go:148-164](internal/egk/form.go#L148-L164):
+Two-digit KV-region code carried in `EF.AVD` and copied through to GDT field `4131` and to the FHIR `Coverage` extension. The 17 standard codes are listed in [pkg/egk/form.go:148-164](pkg/egk/form.go#L148-L164):
 
 ```
 01 Schleswig-Holstein  17 Niedersachsen          51 Rheinland-Pfalz
@@ -507,7 +507,7 @@ If Walls 1, 3, and 4 are satisfied but Wall 2 is not (the current state), the co
 
 ### Mechanical safety guard
 
-The ORGA driver refuses dangerous APDUs at `Slot.Transmit` time unless `Options.AllowPINWrite=true` (or the `-UNSAFE-allow-pin-write` CLI flag). The list ([internal/reader/orga/safety.go](internal/reader/orga/safety.go)) covers:
+The ORGA driver refuses dangerous APDUs at `Slot.Transmit` time unless `Options.AllowPINWrite=true` (or the `-UNSAFE-allow-pin-write` CLI flag). The list ([pkg/reader/orga/safety.go](pkg/reader/orga/safety.go)) covers:
 
 - ISO 7816: `0x20` VERIFY, `0x24` CHANGE REFERENCE DATA, `0x26`/`0x28` DISABLE/ENABLE VERIFICATION REQUIREMENT, `0x2C` RESET RETRY COUNTER, `0xD6` UPDATE BINARY, `0xDC` UPDATE RECORD, `0xDA` PUT DATA, `0xE0`/`0x0E` ERASE BINARY, `0xEE` ERASE RECORD
 - CT-BCS: `0x16` INPUT, `0x18` PERFORM VERIFICATION, `0x19` MODIFY VERIFICATION DATA (any of which can drive the terminal pinpad and trigger a VERIFY on the card)
@@ -555,7 +555,7 @@ cmd/
     ├── atr.go                       # ATR decoder (TS / T0 / TA1 / TBn / TCn / TDn / TCK)
     └── tlv.go                       # BER-TLV decoder for EF.ATR vendor records
 
-internal/reader/                     # reader-driver abstraction
+pkg/reader/                     # reader-driver abstraction
 ├── reader.go                        # Card + Session interfaces, Options, Open() factory
 ├── probe.go                         # Probe / Detect / Driver / OpenDriver
 ├── generic/                         # PC/SC driver (Cherry, OMNIKEY, cyberJack, …)
@@ -586,7 +586,7 @@ internal/c2c/                        # gemSpec_COS chapter 13 card-to-card authe
 ├── keys/                            # gematik X.509 TSL roots + embedded CVC-Roots + chain verify
 └── sm/                              # gemSpec_COS §10 Secure Messaging + AES-CMAC
 
-internal/egk/
+pkg/egk/
 ├── card.go                          # Card interface (Transmit) — implemented by both transports
 ├── constants.go                     # gematik AIDs, FIDs, SFIs, INS codes — named, not magic
 ├── apdu.go                          # SELECT by AID, READ BINARY by SFI / FID fallback
@@ -598,12 +598,12 @@ internal/egk/
 ├── probe.go                         # APDU sweep — surveys known AIDs/EFs (used by card-probe)
 └── form.go                          # FormMapping + diagnostic rows with optional KTDA enrichment
 
-internal/ktda/
+pkg/ktda/
 ├── ke0.go                           # KE0 EDIFACT parser (UNB/UNH/IDK/VDT/VKG/NAM/UNT)
 ├── fetch.go                         # scrape gkv-datenaustausch index, download KE0 files
 └── store.go                         # merge → ktda.json, lookup, Kassenart→Kostenträgergruppe
 
-internal/document/
+pkg/document/
 ├── document.go                      # Encoder interface + format registry
 ├── gdt.{go,_parse.go,_table.go}     # GDT 2.10 (Satzart 6301) encode + parse + comprehension view
 ├── fhir.{go,_parse.go,_table.go}    # HL7 FHIR R4 (Patient + Coverage Bundle) encode + parse + view
@@ -611,7 +611,7 @@ internal/document/
 ├── json.go                          # form-mapping JSON encoder
 └── *_test.go                        # round-trip tests (encode → parse → compare)
 
-internal/output/output.go            # Writer interface — Stdout, File, Multi
+pkg/output/output.go            # Writer interface — Stdout, File, Multi
 
 docs/
 ├── reader-architecture.md           # reader-driver layering + USB-enumeration matrix
@@ -642,12 +642,12 @@ output/                              # populated by `--file` runs — gitignored
 - **Tracing** — `ORGA_TRACE=1` for T=1 block log; `EGK_TRACE=1` for APDU / SFI-fallback log.
 - **KTDA quarterly refresh** — scrape `gkv-datenaustausch.de`, download 6 KE0 files, parse EDIFACT, merge, store as `ktda.json`.
 - **Companion debug tools** — `orga-probe -identify`, `-readcert`, `-c2c`, plus the older `card-probe` for PC/SC.
-- **Hardware-free test infrastructure** — scriptable `fakeSerialIO` ([internal/reader/orga/mock_test.go](internal/reader/orga/mock_test.go)) lets the orga T=1 transport, CT-BCS layer, exchange state machine, and safety guard be unit-tested without a physical terminal. Overall statement coverage **73.6 %** (orga 83.6 %, reader 62.1 %, c2c 83.8 %, egk 83.9 %, all parsing/encoding packages 88–100 %). Remaining gaps are hardware-bound entry points (`orga.Open`, `openSerial`, `generic.Open`) — see [docs/test-plan.md](docs/test-plan.md).
+- **Hardware-free test infrastructure** — scriptable `fakeSerialIO` ([pkg/reader/orga/mock_test.go](pkg/reader/orga/mock_test.go)) lets the orga T=1 transport, CT-BCS layer, exchange state machine, and safety guard be unit-tested without a physical terminal. Overall statement coverage **73.6 %** (orga 83.6 %, reader 62.1 %, c2c 83.8 %, egk 83.9 %, all parsing/encoding packages 88–100 %). Remaining gaps are hardware-bound entry points (`orga.Open`, `openSerial`, `generic.Open`) — see [docs/test-plan.md](docs/test-plan.md).
 
 ### Not yet implemented
 
 - **PIN-protected eGK reads (NFD / DPE / eMP)** — the code path is complete; the live execution is blocked by **Wall 2** (no production SMC-B available). Available test SMC-B doesn't carry CV-certs anyway. See [docs/c2c/walls.md](docs/c2c/walls.md).
-- **Windows ORGA support** — `internal/reader/usb/windows.go` is a stub returning `ErrUnsupported`. TODO: SetupAPI (`SetupDiGetClassDevs`) or WMI (`Get-PnpDevice`) enumeration to match the macOS/Linux behaviour.
+- **Windows ORGA support** — `pkg/reader/usb/windows.go` is a stub returning `ErrUnsupported`. TODO: SetupAPI (`SetupDiGetClassDevs`) or WMI (`Get-PnpDevice`) enumeration to match the macOS/Linux behaviour.
 - **Older inactive gematik CVC-Root predecessors** (1st-6th production generations, `DEZGW810214`…`DEZGW860224`) not yet embedded — current active root + 3 test gens are in. Add when X/Y coordinates can be extracted directly from the source DERs.
 - **External Brainpool ECDSA KAT** — current ECDSA verification is consistency-tested with self-derived signatures; an externally-vetted vector (BSI TR-03111 / wycheproof) should be added before production reliance on Brainpool signatures.
 - **Sub-parameter syntax** — `--output=hl7-adt=a28,version=2.3` etc. is designed but not wired up; flags accept no arguments today. See [docs/output-formats.md](docs/output-formats.md).
@@ -658,7 +658,7 @@ output/                              # populated by `--file` runs — gitignored
 ### Hardware caveats
 
 - The ORGA driver has been live-tested only on macOS against an Ingenico ORGA 930 M with firmware `V5.03 7.05`. The implementation per spec should cover the whole 9xx family but cross-firmware validation hasn't happened.
-- The KE0 index scrape depends on the `gkv-datenaustausch.de` page structure. If they redesign the page, the regex in [internal/ktda/fetch.go](internal/ktda/fetch.go) may need updating.
+- The KE0 index scrape depends on the `gkv-datenaustausch.de` page structure. If they redesign the page, the regex in [pkg/ktda/fetch.go](pkg/ktda/fetch.go) may need updating.
 - Encoding fidelity: gematik XML declares ISO-8859-15; the decoder honours that explicitly. GDT bytes are written ISO-8859-15; FHIR / HL7 v2 / JSON are UTF-8.
 - KTAB is a tiny static table (11 codes); no live KBV download.
 
@@ -693,7 +693,7 @@ XML parse error mentioning `ISO-8859-15` → the charset decoder didn't kick in;
 
 `--output form has no byte representation` → form is a comprehension view, not a transport format. Pick `gdt` / `hl7-fhir` / `hl7-adt` / `json` for `--file`.
 
-`no KE0 download links found at …` → the gkv-datenaustausch.de index page has changed shape. Inspect the page in a browser, update the regex in [internal/ktda/fetch.go](internal/ktda/fetch.go), and re-run `ktda update`. As a temporary workaround, the parser will accept hand-downloaded KE0 files dropped into `ktda-files/raw/` — re-run `ktda update <other-dir>` to skip the discovery step.
+`no KE0 download links found at …` → the gkv-datenaustausch.de index page has changed shape. Inspect the page in a browser, update the regex in [pkg/ktda/fetch.go](pkg/ktda/fetch.go), and re-run `ktda update`. As a temporary workaround, the parser will accept hand-downloaded KE0 files dropped into `ktda-files/raw/` — re-run `ktda update <other-dir>` to skip the discovery step.
 
 `ktda.json not found … fetching insurer table` → first-run auto-fetch. Subsequent runs use the cached file.
 

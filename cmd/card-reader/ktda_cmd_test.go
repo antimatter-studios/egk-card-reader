@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/christhomas/card-reader/internal/egk"
-	"github.com/christhomas/card-reader/internal/ktda"
+	"github.com/antimatter-studios/egk-card-reader/pkg/egk"
+	"github.com/antimatter-studios/egk-card-reader/pkg/ktda"
 )
 
 func TestOrDash(t *testing.T) {
