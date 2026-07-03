@@ -11,6 +11,19 @@ extracts the section matching the pushed tag (with the leading `v` stripped — 
 release body. A tag with no matching section will fail the release job — every
 release must have an entry below.
 
+## [1.2.1] — 2026-07-03
+
+Immutable re-release of the 1.2.0 code under a stable version. **No functional
+change** from 1.2.0.
+
+The `v1.2.0` tag was originally cut on the module-rename commit, then re-tagged
+onto a later commit to add its changelog entry — which changed the module hash
+and broke consumers pinned to the original `v1.2.0`. The `v1.2.0` tag has since
+been restored to its original commit, so this `v1.2.1` re-publishes the same
+code as an immutable version downstreams can pin. Use
+`go get github.com/antimatter-studios/egk-card-reader@v1.2.1` if a `@v1.2.0`
+hash mismatch bites you. See [1.2.0] below for the full list of changes.
+
 ## [1.2.0] — 2026-06-18
 
 ### Changed
